@@ -1,0 +1,45 @@
+api:
+  provider: tank01
+  base_url: https://tank01-fantasy-stats.p.rapidapi.com
+  rate_limit: 1000
+  cache_ttl: 60
+
+storage:
+  backend: csv
+  base_path: ./data
+
+endpoints:
+  priority:
+    daily:
+      - dfs_salaries
+      - betting_odds
+      - daily_schedule
+      - injuries
+      - projections
+    post_game:
+      - player_stats
+      - box_scores
+    weekly:
+      - teams
+      - depth_charts
+      - player_list
+
+collection:
+  dfs_salaries:
+    lineup_types:
+      - DraftKings
+      - FanDuel
+      - Yahoo
+    default_lineup: DraftKings
+
+  betting_odds:
+    collect_pre_game: true
+    minutes_before_tipoff: 60
+
+  injuries:
+    update_frequency_hours: 4
+
+  player_stats:
+    stats_types:
+      - game
+      - season
