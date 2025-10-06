@@ -135,13 +135,15 @@ class DailyBacktest:
         1. Get teams playing on date
         2. Get players for each team
         3. Check which players need historical data
+        4. Load player game logs and DFS salaries
+        5. Merge data together
 
         Args:
             game_date: Date in YYYYMMDD format
             seasons: Seasons to collect (defaults to current and previous)
 
         Returns:
-            Dict with summary of data preparation
+            Dict with summary of data preparation and merged DataFrame
         """
         if seasons is None:
             seasons = self.seasons
@@ -168,13 +170,53 @@ class DailyBacktest:
         print(f"Players with existing data: {len(player_ids) - len(missing_player_ids)}")
         print(f"Players needing data collection: {len(missing_player_ids)}")
 
+        print(f"\nLoading player game logs from database...")
+        conn = sqlite3.connect(DB_PATH)
+        player_logs_query = """
+            SELECT * FROM player_logs
+            WHERE gameDate = ?
+        """
+        player_logs_df = pd.read_sql_query(player_logs_query, conn, params=(game_date,))
+        print(f"Loaded {len(player_logs_df)} player game logs")
+
+        print(f"\nLoading DFS salaries from database...")
+        merged_df = pd.DataFrame()
+        try:
+            dfs_salaries_query = """
+                SELECT * FROM dfs_salaries
+                WHERE platform = 'DraftKings'
+            """
+            dfs_salaries_df = pd.read_sql_query(dfs_salaries_query, conn)
+            print(f"Loaded {len(dfs_salaries_df)} DFS salary records")
+
+            if not player_logs_df.empty and not dfs_salaries_df.empty:
+                print(f"\nMerging player logs with DFS salaries...")
+                merged_df = player_logs_df.merge(
+                    dfs_salaries_df,
+                    on='playerID',
+                    how='left',
+                    suffixes=('', '_salary')
+                )
+                print(f"Merged DataFrame: {len(merged_df)} rows, {len(merged_df.columns)} columns")
+            elif not player_logs_df.empty:
+                merged_df = player_logs_df
+                print(f"\nUsing player logs only (no DFS salaries available)")
+
+        except Exception as e:
+            logger.warning(f"Failed to load DFS salaries: {str(e)}")
+            merged_df = player_logs_df if not player_logs_df.empty else pd.DataFrame()
+            print(f"Warning: Could not load DFS salaries - using player logs only")
+        finally:
+            conn.close()
+
         return {
             'game_date': game_date,
             'teams': unique_teams,
             'total_players': len(all_players),
             'players_with_data': len(player_ids) - len(missing_player_ids),
             'players_collected': len(missing_player_ids),
-            'all_players': all_players
+            'all_players': all_players,
+            'merged_data': merged_df
         }
 
     def verify_data_completeness(self, game_date: str) -> Dict[str, Any]:
@@ -504,17 +546,12 @@ class DailyBacktest:
                     print(f"  Feature names (first 10): {list(X_train.columns[:10])}")
                     print(f"  Target (y) range: min={y_train.min():.2f}, max={y_train.max():.2f}, mean={y_train.mean():.2f}")
 
-                    print(f"\n[STEP 6] Training Random Forest model...")
-                    from sklearn.ensemble import RandomForestRegressor
-                    trained_model = RandomForestRegressor(
-                        n_estimators=100,
-                        max_depth=8,
-                        min_samples_split=10,
-                        random_state=42,
-                        n_jobs=-1
-                    )
-                    trained_model.fit(X_train, y_train)
-                    print(f"  Model training complete")
+                    print(f"\n[STEP 6] Model training...")
+                    print(f"  NOTE: Model implementation removed - implement your own model here")
+                    print(f"  Training data available: X_train ({len(X_train)} samples, {len(X_train.columns)} features)")
+                    print(f"  Target data available: y_train (mean={y_train.mean():.2f})")
+
+                    trained_model = None
 
                     result['training_samples'] = len(X_train)
                     result['num_features'] = len(X_train.columns)
