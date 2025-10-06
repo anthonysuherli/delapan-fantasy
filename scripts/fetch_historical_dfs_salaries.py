@@ -12,7 +12,7 @@ from src.data.storage_utils import get_partitioned_path
 
 load_dotenv()
 
-def save_dfs_salaries(data: dict, date_str: str, base_dir: str = "./data"):
+def save_dfs_salaries(data: dict, date_str: str, base_dir: str = "./data/inputs"):
     if "body" not in data:
         return
 
@@ -24,7 +24,7 @@ def save_dfs_salaries(data: dict, date_str: str, base_dir: str = "./data"):
     output_path.parent.mkdir(parents=True, exist_ok=True)
     df.to_parquet(output_path, index=False)
 
-def save_betting_odds(data: dict, date_str: str, base_dir: str = "./data"):
+def save_betting_odds(data: dict, date_str: str, base_dir: str = "./data/inputs"):
     if "body" not in data:
         return
 
@@ -36,7 +36,7 @@ def save_betting_odds(data: dict, date_str: str, base_dir: str = "./data"):
     output_path.parent.mkdir(parents=True, exist_ok=True)
     df.to_parquet(output_path, index=False)
 
-def save_projections(data: dict, date_str: str, base_dir: str = "./data"):
+def save_projections(data: dict, date_str: str, base_dir: str = "./data/inputs"):
     if "body" not in data:
         return
 
@@ -63,7 +63,7 @@ def fetch_dfs_salaries_for_seasons():
     season_ranges = [
         # ("20221018", "20230410"),
         # ("20231024", "20240415"),
-        ("20250120", "20250414")
+        ("20241022", "20250414")
     ]
     season_ranges = [
         (
@@ -83,9 +83,9 @@ def fetch_dfs_salaries_for_seasons():
         while current_date <= end_date:
             date_str = current_date.strftime("%Y%m%d")
 
-            dfs_path = get_partitioned_path(base_dir="./data/dfs_salaries", date=date_str)
-            betting_path = get_partitioned_path(base_dir="./data/betting_odds", date=date_str)
-            projections_path = get_partitioned_path(base_dir="./data/projections", date=date_str)
+            dfs_path = get_partitioned_path(base_dir="./data/inputs/dfs_salaries", date=date_str)
+            betting_path = get_partitioned_path(base_dir="./data/inputs/betting_odds", date=date_str)
+            projections_path = get_partitioned_path(base_dir="./data/inputs/projections", date=date_str)
 
             if dfs_path.exists() and betting_path.exists() and projections_path.exists():
                 print(f"Files exist for {date_str}, skipping...")

@@ -6,7 +6,7 @@ if str(repo_root) not in sys.path:
     sys.path.insert(0, str(repo_root))
 
 from datetime import datetime, timedelta
-from typing import Dict, List, Any, Optional, Callable
+from typing import Dict, List, Any, Optional, Callable, Set
 import pandas as pd
 import numpy as np
 import logging
@@ -24,12 +24,12 @@ class DailyBacktest:
 
     def __init__(
         self,
-        data_prep,
         storage,
+        api_client=None,
         seasons: Optional[List[str]] = None
     ):
-        self.data_prep = data_prep
         self.storage = storage
+        self.api_client = api_client
 
         if seasons is None:
             current_year = datetime.now().year
@@ -38,15 +38,175 @@ class DailyBacktest:
             self.seasons = seasons
 
         self.results = []
+        self._player_cache = None
+
+    def get_teams_for_date(self, game_date: str) -> List[Dict[str, str]]:
+        """Get teams playing on specific date from database."""
+        conn = sqlite3.connect(DB_PATH)
+        query = """
+            SELECT away, home, gameID FROM games
+            WHERE gameDate = ?
+        """
+        df = pd.read_sql_query(query, conn, params=(game_date,))
+        conn.close()
+
+        teams = []
+        for _, row in df.iterrows():
+            teams.append({
+                'teamID': None,
+                'teamAbv': row['away'],
+                'side': 'away',
+                'gameID': row['gameID']
+            })
+            teams.append({
+                'teamID': None,
+                'teamAbv': row['home'],
+                'side': 'home',
+                'gameID': row['gameID']
+            })
+
+        return teams
+
+    def get_players_for_team(self, team_abv: str) -> List[Dict[str, str]]:
+        """Get all players for specific team from database."""
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            query = """
+                SELECT DISTINCT playerID, longName, team
+                FROM player_logs
+                WHERE team = ?
+                ORDER BY longName
+            """
+            df = pd.read_sql_query(query, conn, params=(team_abv,))
+            conn.close()
+
+            if df.empty:
+                return []
+
+            players = []
+            for _, row in df.iterrows():
+                players.append({
+                    'playerID': str(row['playerID']),
+                    'playerName': str(row['longName']),
+                    'team': str(row['team']),
+                    'pos': ''
+                })
+
+            return players
+
+        except Exception as e:
+            logger.error(f"Database lookup failed for team {team_abv}: {str(e)}")
+            return []
+
+    def _build_player_cache(self) -> Set[str]:
+        """Build cache of playerIDs with existing data from database."""
+        if self._player_cache is not None:
+            return self._player_cache
+
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            query = "SELECT DISTINCT playerID FROM player_logs"
+            df = pd.read_sql_query(query, conn)
+            conn.close()
+
+            player_ids = set(df['playerID'].astype(str).unique())
+            self._player_cache = player_ids
+            return player_ids
+
+        except Exception as e:
+            logger.error(f"Failed to build player cache from database: {str(e)}")
+            self._player_cache = set()
+            return set()
+
+    def get_players_without_data(self, player_ids: List[str]) -> List[str]:
+        """Get list of players without historical data."""
+        cached_players = self._build_player_cache()
+        return [pid for pid in player_ids if str(pid) not in cached_players]
+
+    def prepare_data_for_date(
+        self,
+        game_date: str,
+        seasons: Optional[List[str]] = None
+    ) -> Dict[str, Any]:
+        """
+        Prepare all required data for backtest on specific date.
+
+        Process:
+        1. Get teams playing on date
+        2. Get players for each team
+        3. Check which players need historical data
+
+        Args:
+            game_date: Date in YYYYMMDD format
+            seasons: Seasons to collect (defaults to current and previous)
+
+        Returns:
+            Dict with summary of data preparation
+        """
+        if seasons is None:
+            seasons = self.seasons
+
+        print(f"Preparing data for {game_date}")
+        print(f"Seasons to collect: {seasons}")
+
+        teams = self.get_teams_for_date(game_date)
+        unique_teams = list(set([t['teamAbv'] for t in teams]))
+
+        print(f"Teams playing: {len(unique_teams)} teams, {len(teams)} total (home+away)")
+
+        all_players = []
+        for team_abv in unique_teams:
+            players = self.get_players_for_team(team_abv)
+            all_players.extend(players)
+            print(f"  {team_abv}: {len(players)} players")
+
+        print(f"Total players: {len(all_players)}")
+
+        player_ids = [p['playerID'] for p in all_players]
+        missing_player_ids = self.get_players_without_data(player_ids)
+
+        print(f"Players with existing data: {len(player_ids) - len(missing_player_ids)}")
+        print(f"Players needing data collection: {len(missing_player_ids)}")
+
+        return {
+            'game_date': game_date,
+            'teams': unique_teams,
+            'total_players': len(all_players),
+            'players_with_data': len(player_ids) - len(missing_player_ids),
+            'players_collected': len(missing_player_ids),
+            'all_players': all_players
+        }
+
+    def verify_data_completeness(self, game_date: str) -> Dict[str, Any]:
+        """Verify that all required data exists for backtest date."""
+        teams = self.get_teams_for_date(game_date)
+        unique_teams = list(set([t['teamAbv'] for t in teams]))
+
+        all_players = []
+        for team_abv in unique_teams:
+            players = self.get_players_for_team(team_abv)
+            all_players.extend(players)
+
+        player_ids = [p['playerID'] for p in all_players]
+        missing_player_ids = self.get_players_without_data(player_ids)
+
+        return {
+            'game_date': game_date,
+            'total_players': len(all_players),
+            'players_with_data': len(player_ids) - len(missing_player_ids),
+            'players_missing_data': len(missing_player_ids),
+            'missing_player_ids': missing_player_ids,
+            'is_complete': len(missing_player_ids) == 0
+        }
 
     def prepare_slate_data(self, game_date: str) -> Dict[str, Any]:
         """
         Prepare all data for specific slate date.
 
-        Calls BacktestDataPrep to:
+        Process:
         1. Get teams playing on date
         2. Get players for teams
-        3. Collect missing historical data
+        3. Check data completeness
 
         Args:
             game_date: Date in YYYYMMDD format
@@ -55,7 +215,7 @@ class DailyBacktest:
             Dict with data preparation summary
         """
         logger.info(f"Preparing slate data for {game_date}")
-        prep_summary = self.data_prep.prepare_data_for_date(
+        prep_summary = self.prepare_data_for_date(
             game_date=game_date,
             seasons=self.seasons
         )
@@ -74,7 +234,7 @@ class DailyBacktest:
             Dict with verification status
         """
         logger.info(f"Verifying data completeness for {game_date}")
-        verification = self.data_prep.verify_data_completeness(game_date)
+        verification = self.verify_data_completeness(game_date)
         logger.info(f"Verification complete: {verification['players_with_data']}/{verification.get('total_players', 0)} players have data")
 
         return verification
@@ -223,78 +383,287 @@ class DailyBacktest:
 
         return features
 
-    def drun_daily_backtest(
+    def run_daily_backtest(
         self,
         game_date: str,
+        lookback_days: int = 90,
+        train_model: bool = True,
+        evaluate_actuals: bool = True,
         model_fn=None,
         optimizer_fn=None
     ) -> Dict[str, Any]:
         """
-        Run complete backtest for single date.
+        Run complete backtest for single date with walk-forward validation.
 
         Process:
         1. Prepare data (collect missing historical data)
-        2. Verify data completeness
-        3. Load player features
-        4. Generate projections (if model provided)
-        5. Optimize lineup (if optimizer provided)
-        6. Compare to actuals (if available)
+        2. Load historical training data (strictly before game_date)
+        3. Build training features
+        4. Train model
+        5. Build slate features
+        6. Generate projections
+        7. Optimize lineup (if optimizer provided)
+        8. Load actuals and evaluate
 
         Args:
             game_date: Date in YYYYMMDD format
-            model_fn: Optional function that returns trained model
+            lookback_days: Days of historical data for training (default: 90)
+            train_model: Whether to train a fresh model (default: True)
+            evaluate_actuals: Whether to evaluate against actuals (default: True)
+            model_fn: Optional function that returns trained model (used if train_model=False)
             optimizer_fn: Optional function that returns lineup optimizer
 
         Returns:
-            Dict with backtest results
+            Dict with backtest results including metrics
         """
         logger.info(f"Starting daily backtest for {game_date}")
         print(f"\n=== Running Backtest for {game_date} ===\n")
 
-        prep_summary = self.prepare_slate_data(game_date)
+        print(f"[STEP 1] Checking games for {game_date}...")
+        conn = sqlite3.connect(DB_PATH)
+        games_check = pd.read_sql_query(
+            f"SELECT * FROM games WHERE gameDate = {game_date}",
+            conn,
+        )
+        conn.close()
 
+        print(f"  Found {len(games_check)} games in database")
+        if not games_check.empty:
+            print(f"  Games: {', '.join(games_check['gameID'].tolist())}")
+            print(f"\n  Sample game data:")
+            print(games_check.head().to_string(index=False))
+        else:
+            print(f"  WARNING: No games found for {game_date}")
+            return {
+                'game_date': game_date,
+                'error': 'No games found for this date'
+            }
+
+        print(f"\n[STEP 2] Preparing slate data...")
+        prep_summary = self.prepare_slate_data(game_date)
+        print(f"  Teams: {prep_summary.get('teams', [])}")
+        print(f"  Total players: {prep_summary.get('total_players', 0)}")
+
+        print(f"\n[STEP 3] Verifying data completeness...")
         verification = self.verify_slate_readiness(game_date)
+        print(f"  Players with data: {verification['players_with_data']}")
+        print(f"  Players missing data: {verification['players_missing_data']}")
 
         if not verification['is_complete']:
             logger.warning(f"{verification['players_missing_data']} players missing data for {game_date}")
             print(f"WARNING: {verification['players_missing_data']} players missing data")
-
-        players = prep_summary.get('all_players', [])
-        logger.info(f"Processing {len(players)} players")
-
-        player_features = self.prepare_player_features(game_date, players)
-
-        print(f"\nPrepared features for {len(player_features)} players")
 
         result = {
             'game_date': game_date,
             'teams': prep_summary.get('teams', []),
             'total_players': prep_summary.get('total_players', 0),
             'players_with_data': verification['players_with_data'],
-            'players_with_features': len(player_features),
             'data_complete': verification['is_complete']
         }
 
-        if model_fn is not None:
+        trained_model = None
+
+        if train_model:
+            print(f"\n[STEP 4] Loading historical training data ({lookback_days} days lookback)...")
+            from datetime import datetime, timedelta
+
+            game_dt = datetime.strptime(game_date, '%Y%m%d')
+            start_dt = game_dt - timedelta(days=lookback_days)
+            start_date = start_dt.strftime('%Y%m%d')
+
+            print(f"  Date range: {start_date} to {game_date} (exclusive)")
+
+            conn = sqlite3.connect(DB_PATH)
+            training_query = """
+                SELECT *
+                FROM player_logs
+                WHERE gameDate >= ? AND gameDate < ?
+                ORDER BY gameDate
+            """
+            training_data = pd.read_sql_query(training_query, conn, params=(start_date, game_date))
+            conn.close()
+
+            print(f"  Loaded {len(training_data)} player logs")
+            print(f"  Unique players: {training_data['playerID'].nunique() if not training_data.empty else 0}")
+            print(f"  Date range in data: {training_data['gameDate'].min()} to {training_data['gameDate'].max()}" if not training_data.empty else "")
+
+            if not training_data.empty:
+                print(f"\n  Sample training data (first 5 rows):")
+                print(training_data[['gameDate', 'playerID', 'longName', 'pts', 'reb', 'ast', 'mins']].head().to_string(index=False))
+
+            if len(training_data) < 500:
+                print(f"\n  WARNING: Insufficient training data ({len(training_data)} logs)")
+                logger.warning(f"Insufficient training data for {game_date}: {len(training_data)} logs")
+            else:
+                print(f"\n[STEP 5] Building training features...")
+                X_train, y_train = self._build_training_features(training_data)
+
+                if not X_train.empty:
+                    print(f"  Training samples: {len(X_train)}")
+                    print(f"  Features: {len(X_train.columns)}")
+                    print(f"  Feature names (first 10): {list(X_train.columns[:10])}")
+                    print(f"  Target (y) range: min={y_train.min():.2f}, max={y_train.max():.2f}, mean={y_train.mean():.2f}")
+
+                    print(f"\n[STEP 6] Training Random Forest model...")
+                    from sklearn.ensemble import RandomForestRegressor
+                    trained_model = RandomForestRegressor(
+                        n_estimators=100,
+                        max_depth=8,
+                        min_samples_split=10,
+                        random_state=42,
+                        n_jobs=-1
+                    )
+                    trained_model.fit(X_train, y_train)
+                    print(f"  Model training complete")
+
+                    result['training_samples'] = len(X_train)
+                    result['num_features'] = len(X_train.columns)
+                else:
+                    print("  ERROR: Failed to build training features")
+                    logger.error(f"Failed to build training features for {game_date}")
+
+        players = prep_summary.get('all_players', [])
+        logger.info(f"Processing {len(players)} players")
+
+        print(f"\n[STEP 7] Building slate features for {len(players)} players...")
+        player_features = self.prepare_player_features(game_date, players)
+
+        print(f"  Players with features: {len(player_features)}")
+        if not player_features.empty:
+            print(f"  Feature columns: {len(player_features.columns)}")
+            print(f"\n  Sample player features (first 3):")
+            display_cols = ['playerID', 'playerName', 'team', 'pos', 'games_played']
+            stat_cols = [col for col in player_features.columns if 'fpts_avg' in col or 'pts_avg' in col][:5]
+            print(player_features[display_cols + stat_cols].head(3).to_string(index=False))
+
+        result['players_with_features'] = len(player_features)
+
+        if trained_model is not None or model_fn is not None:
             logger.info("Generating projections")
-            print("\nGenerating projections...")
-            projections = self._generate_projections(player_features, model_fn)
+            print(f"\n[STEP 8] Generating projections...")
+
+            if trained_model is not None:
+                projections = self._generate_projections_with_model(player_features, trained_model)
+            else:
+                projections = self._generate_projections(player_features, model_fn)
+
             result['projections'] = projections
             logger.info(f"Generated {len(projections)} projections")
-            print(f"Generated {len(projections)} projections")
+            print(f"  Generated {len(projections)} projections")
 
-        if optimizer_fn is not None and model_fn is not None:
-            logger.info("Optimizing lineup")
-            print("\nOptimizing lineup...")
-            lineup = self._optimize_lineup(projections, optimizer_fn)
-            result['lineup'] = lineup
-            logger.info(f"Optimized lineup with {len(lineup)} players")
-            print(f"Optimized lineup with {len(lineup)} players")
+            if not projections.empty:
+                print(f"  Projection range: min={projections['projected_fpts'].min():.2f}, max={projections['projected_fpts'].max():.2f}, mean={projections['projected_fpts'].mean():.2f}")
+                print(f"\n  Top 5 projected players:")
+                print(projections.nlargest(5, 'projected_fpts')[['playerName', 'team', 'pos', 'projected_fpts']].to_string(index=False))
+
+            if evaluate_actuals and not projections.empty:
+                print(f"\n[STEP 9] Evaluating against actuals...")
+                actuals = self._load_actuals(game_date)
+
+                print(f"  Loaded actuals for {len(actuals)} players")
+
+                if not actuals.empty:
+                    print(f"  Actual fpts range: min={actuals['actual_fpts'].min():.2f}, max={actuals['actual_fpts'].max():.2f}, mean={actuals['actual_fpts'].mean():.2f}")
+
+                    merged = projections.merge(actuals[['playerID', 'actual_fpts']], on='playerID', how='inner')
+
+                    print(f"  Matched {len(merged)} players between projections and actuals")
+
+                    if not merged.empty:
+                        from src.evaluation.metrics import calculate_mape, calculate_rmse, calculate_correlation
+
+                        mape = calculate_mape(merged['actual_fpts'], merged['projected_fpts'])
+                        rmse = calculate_rmse(merged['actual_fpts'], merged['projected_fpts'])
+                        corr = calculate_correlation(merged['actual_fpts'], merged['projected_fpts'])
+
+                        result['mape'] = mape
+                        result['rmse'] = rmse
+                        result['correlation'] = corr
+                        result['num_evaluated'] = len(merged)
+
+                        print(f"\n  Evaluation Metrics:")
+                        print(f"    MAPE:        {mape:.1f}%")
+                        print(f"    RMSE:        {rmse:.2f} points")
+                        print(f"    Correlation: {corr:.3f}")
+
+                        print(f"\n  Biggest errors (top 5):")
+                        merged['error'] = abs(merged['projected_fpts'] - merged['actual_fpts'])
+                        print(merged.nlargest(5, 'error')[['playerName', 'projected_fpts', 'actual_fpts', 'error']].to_string(index=False))
+
+                        logger.info(f"Evaluation metrics: MAPE={mape:.1f}%, RMSE={rmse:.2f}, Corr={corr:.3f}")
+                    else:
+                        print("  WARNING: No matching players between projections and actuals")
+                else:
+                    print("  WARNING: No actual results available for evaluation")
+
+            if optimizer_fn is not None:
+                logger.info("Optimizing lineup")
+                print("\nOptimizing lineup...")
+                lineup = self._optimize_lineup(projections, optimizer_fn)
+                result['lineup'] = lineup
+                logger.info(f"Optimized lineup with {len(lineup)} players")
+                print(f"Optimized lineup with {len(lineup)} players")
 
         self.results.append(result)
         logger.info(f"Backtest complete for {game_date}")
 
         return result
+
+    def _build_training_features(self, training_data: pd.DataFrame) -> tuple:
+        """Build features from historical training data."""
+        from src.evaluation.feature_builder import FeatureBuilder
+
+        builder = FeatureBuilder()
+        X_train, y_train = builder.build_training_features(training_data)
+        return X_train, y_train
+
+    def _generate_projections_with_model(
+        self,
+        player_features: pd.DataFrame,
+        model
+    ) -> pd.DataFrame:
+        """Generate projections using trained model directly."""
+        if player_features.empty:
+            logger.warning("No player features to generate projections")
+            return pd.DataFrame()
+
+        feature_cols = [col for col in player_features.columns
+                       if col not in ['playerID', 'playerName', 'team', 'pos', 'games_played']]
+
+        X = player_features[feature_cols].fillna(0)
+        predictions = model.predict(X)
+
+        projections = player_features[['playerID', 'playerName', 'team', 'pos']].copy()
+        projections['projected_fpts'] = predictions
+
+        return projections
+
+    def _load_actuals(self, game_date: str) -> pd.DataFrame:
+        """Load actual fantasy scores for players on game date."""
+        try:
+            from src.evaluation.feature_builder import FeatureBuilder
+
+            conn = sqlite3.connect(DB_PATH)
+            query = """
+                SELECT playerID, longName as playerName, team, pos,
+                       pts, reb, ast, stl, blk, TOV, mins
+                FROM player_logs
+                WHERE gameDate = ?
+            """
+            df = pd.read_sql_query(query, conn, params=(game_date,))
+            conn.close()
+
+            if df.empty:
+                return pd.DataFrame()
+
+            builder = FeatureBuilder()
+            df['actual_fpts'] = df.apply(builder.calculate_dk_fantasy_points, axis=1)
+
+            return df[['playerID', 'playerName', 'team', 'pos', 'actual_fpts']]
+
+        except Exception as e:
+            logger.error(f"Failed to load actuals for {game_date}: {str(e)}")
+            return pd.DataFrame()
 
     def _generate_projections(
         self,

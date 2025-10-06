@@ -37,14 +37,14 @@ Two-phase collection process:
 Phase 1 - Schedule Collection:
 1. Iterates through each date in range
 2. Calls Tank01Client.get_schedule(game_date)
-3. Saves schedule to ./data/schedule/schedule_YYYYMMDD.parquet
+3. Saves schedule to ./data/inputs/schedule/schedule_YYYYMMDD.parquet
 4. Logs progress and remaining API requests
 
 Phase 2 - Box Score Collection:
 1. Loads saved schedules from Phase 1
 2. Extracts game IDs from each schedule
 3. Calls Tank01Client.get_box_score(game_id) for each game
-4. Saves box scores to ./data/box_scores/box_scores_GAMEID.parquet
+4. Saves box scores to ./data/inputs/box_scores/box_scores_GAMEID.parquet
 5. Progress reports every 5 dates
 6. Handles errors gracefully, continues on failure
 
@@ -64,7 +64,7 @@ Box score data (per game):
 ### Storage Format
 
 - Format: Parquet (compressed, efficient for analytics)
-- Location: ./data/schedule/ and ./data/box_scores/
+- Location: ./data/inputs/schedule/ and ./data/inputs/box_scores/
 - Filename patterns:
   - schedule_YYYYMMDD.parquet
   - box_scores_GAMEID.parquet
@@ -76,7 +76,7 @@ Box score data (per game):
 2024-12-15 10:30:00 - INFO - NBA Historical Game Logs Builder
 2024-12-15 10:30:00 - INFO - ================================================================================
 2024-12-15 10:30:00 - INFO - Date Range: 20241201 to 20241231
-2024-12-15 10:30:00 - INFO - Storage: Parquet format in ./data/
+2024-12-15 10:30:00 - INFO - Storage: Parquet format in ./data/inputs/
 2024-12-15 10:30:00 - INFO - API Rate Limit: 1000 requests/month
 Proceed with collection? (y/n): y
 
@@ -140,4 +140,4 @@ Script continues on errors:
 3. Schedule collection is fast (1 request per date)
 4. Box scores are bulk of API usage (1 per game)
 5. Use -y flag for automated/scheduled runs
-6. Check ./data/ directories after completion
+6. Check ./data/inputs/ directories after completion

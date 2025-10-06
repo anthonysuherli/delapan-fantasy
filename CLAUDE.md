@@ -66,7 +66,7 @@ Game ID format: awayTeamAbv@homeTeamAbv_YYYYMMDD
 BaseStorage abstract interface in [src/data/storage/base.py](src/data/storage/base.py).
 
 CSVStorage implementation (src/data/storage/csv_storage.py):
-- Stores data as Parquet or CSV in ./data/ subdirectories
+- Stores data as Parquet or CSV in ./data/inputs/ subdirectories
 - Methods: save_betting_odds, save_dfs_salaries, save_projections, save_schedule, save_injuries, save_teams, save_box_score
 - load_data(data_type, start_date=None, end_date=None): Load and filter by date range
 - use_parquet=True by default for efficiency
@@ -74,13 +74,14 @@ CSVStorage implementation (src/data/storage/csv_storage.py):
 Storage structure:
 ```
 data/
-├── betting_odds/       # betting_odds_YYYYMMDD.parquet
-├── dfs_salaries/       # dfs_salaries_YYYYMMDD.parquet
-├── projections/        # projections_YYYYMMDD.parquet
-├── schedule/           # schedule_YYYYMMDD.parquet
-├── injuries/           # injuries_YYYYMMDD.parquet
-├── teams/              # teams.parquet
-└── box_scores/         # box_scores_GAMEID.parquet
+└── inputs/
+    ├── betting_odds/       # betting_odds_YYYYMMDD.parquet
+    ├── dfs_salaries/       # dfs_salaries_YYYYMMDD.parquet
+    ├── projections/        # projections_YYYYMMDD.parquet
+    ├── schedule/           # schedule_YYYYMMDD.parquet
+    ├── injuries/           # injuries_YYYYMMDD.parquet
+    ├── teams/              # teams.parquet
+    └── box_scores/         # box_scores_GAMEID.parquet
 ```
 
 
@@ -135,7 +136,7 @@ Storage flattens body to DataFrame for analysis.
 1. Edit scripts/build_historical_game_logs.py to set date range
 2. Run script: python scripts/build_historical_game_logs.py
 3. Monitor API usage via client.get_remaining_requests()
-4. Verify data in ./data/ subdirectories
+4. Verify data in ./data/inputs/ subdirectories
 
 ### Next Development: Phase 2 (Feature Pipeline)
 
