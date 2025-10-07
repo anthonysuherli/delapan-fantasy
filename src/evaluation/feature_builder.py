@@ -174,6 +174,144 @@ class FeatureBuilder:
 
         return features_df
 
+    def build_rolling_window_features_training(
+        self,
+        training_data: pd.DataFrame,
+        window_sizes: List[int] = [4]
+    ) -> Tuple[pd.DataFrame, pd.Series]:
+        """
+        Build rolling window features for training set with specified window sizes.
+
+        For each player-game in training_data:
+        - Get all games before that date for that player
+        - Compute 6 features × len(window_sizes) windows
+        - Target = DK fantasy points from that game
+
+        Args:
+            training_data: All player game logs for training period
+            window_sizes: List of window sizes (e.g., [3, 4, 5, 10])
+
+        Returns:
+            X: Feature matrix (n_samples, 6*len(window_sizes) features)
+            y: DK fantasy points target vector
+        """
+        from src.features.rolling_window_features import RollingWindowFeatureCalculator
+
+        logger.info(f"Building rolling window features with windows: {window_sizes}")
+
+        if training_data.empty:
+            logger.warning("Empty training data provided")
+            return pd.DataFrame(), pd.Series()
+
+        df = training_data.copy()
+
+        if 'fpts' not in df.columns:
+            logger.info("Calculating DK fantasy points for training data")
+            df['fpts'] = df.apply(self.calculate_dk_fantasy_points, axis=1)
+
+        calculator = RollingWindowFeatureCalculator(window_sizes=window_sizes)
+        features_list = []
+        targets = []
+        metadata = []
+
+        players_processed = 0
+        for player_name in df['longName'].unique():
+            player_games = df[df['longName'] == player_name].sort_values('gameDate')
+
+            for idx, game_row in player_games.iterrows():
+                game_date = game_row['gameDate']
+
+                features = calculator.calculate_features(
+                    player_name,
+                    game_date,
+                    df
+                )
+
+                if features is not None:
+                    features_list.append(features)
+                    targets.append(game_row['fpts'])
+                    metadata.append({
+                        'player_name': player_name,
+                        'game_date': game_date
+                    })
+
+            players_processed += 1
+            if players_processed % 100 == 0:
+                logger.debug(f"Processed {players_processed} players")
+
+        if not features_list:
+            logger.warning("No rolling window features generated from training data")
+            return pd.DataFrame(), pd.Series()
+
+        X = pd.DataFrame(features_list)
+        y = pd.Series(targets)
+
+        X['_player_name'] = [m['player_name'] for m in metadata]
+        X['_game_date'] = [m['game_date'] for m in metadata]
+
+        logger.info(f"Built rolling window training features: {len(X)} samples, {len(X.columns)-2} features")
+
+        return X, y
+
+    def build_rolling_window_features_slate(
+        self,
+        slate_data: Dict[str, Any],
+        training_data: pd.DataFrame,
+        window_sizes: List[int] = [4]
+    ) -> pd.DataFrame:
+        """
+        Build rolling window features for today's DFS slate with specified window sizes.
+
+        Args:
+            slate_data: Dict with 'salaries', 'schedule', 'date' keys
+            training_data: Historical games (all before slate date)
+            window_sizes: List of window sizes (e.g., [3, 4, 5, 10])
+
+        Returns:
+            DataFrame with features + metadata (player_name, salary, position, etc.)
+        """
+        from src.features.rolling_window_features import RollingWindowFeatureCalculator
+
+        logger.info(f"Building rolling window features for slate with windows: {window_sizes}")
+
+        if slate_data['salaries'].empty:
+            logger.warning("No salaries data for slate")
+            return pd.DataFrame()
+
+        calculator = RollingWindowFeatureCalculator(window_sizes=window_sizes)
+        slate_features = []
+
+        slate_date = slate_data['date']
+        salaries_df = slate_data['salaries'].copy()
+
+        for _, player_row in salaries_df.iterrows():
+            player_name = player_row.get('longName') or player_row.get('playerName', '')
+
+            features = calculator.calculate_features(
+                player_name,
+                slate_date,
+                training_data
+            )
+
+            if features is not None:
+                features['player_name'] = player_name
+                features['playerID'] = player_row.get('playerID', '')
+                features['salary'] = player_row.get('salary', 0)
+                features['pos'] = player_row.get('pos', '')
+                features['team'] = player_row.get('team', '')
+                features['opponent'] = player_row.get('opponent', '')
+                slate_features.append(features)
+
+        if not slate_features:
+            logger.warning("No rolling window features generated for slate")
+            return pd.DataFrame()
+
+        features_df = pd.DataFrame(slate_features)
+
+        logger.info(f"Built rolling window slate features for {len(features_df)} players")
+
+        return features_df
+
     def _calculate_features_from_prior_games(
         self,
         prior_games: pd.DataFrame,

@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 class WalkForwardBacktest:
 
-    def __init__(self, config: BacktestConfig, db_path: str = None):
+    def __init__(self, config: BacktestConfig, db_path: Optional[str] = None):
         self.config = config
         self.db_path = db_path or "nba_dfs.db"
         self.loader = HistoricalDataLoader(config, self.db_path)
@@ -65,26 +65,46 @@ class WalkForwardBacktest:
                     continue
 
                 print(f"  Building features from {len(training_data)} training games...")
-                X_train, y_train = self.feature_builder.build_training_features(training_data)
 
-                if X_train.empty or y_train.empty:
-                    print(f"  Skipping (feature generation failed)")
-                    logger.warning(f"Feature generation failed for {test_date}")
+                if self.config.per_player_models:
+                    print(f"  Using per-player models...")
+                    projections = self.generate_per_player_projections(
+                        slate_data,
+                        training_data
+                    )
+                else:
+                    X_train, y_train = self.feature_builder.build_rolling_window_features_training(
+                        training_data,
+                        window_sizes=self.config.rolling_window_sizes
+                    )
+
+                    if X_train.empty or y_train.empty:
+                        print(f"  Skipping (feature generation failed)")
+                        logger.warning(f"Feature generation failed for {test_date}")
+                        continue
+
+                    print(f"  Training {self.config.model_type} model...")
+                    model = self.train_model(X_train, y_train)
+
+                    print(f"  Building slate features...")
+                    slate_features = self.feature_builder.build_rolling_window_features_slate(
+                        slate_data,
+                        training_data,
+                        window_sizes=self.config.rolling_window_sizes
+                    )
+
+                    if slate_features.empty:
+                        print(f"  Skipping (no slate features generated)")
+                        logger.warning(f"No slate features for {test_date}")
+                        continue
+
+                    print(f"  Generating projections for {len(slate_features)} players...")
+                    projections = self.generate_projections(model, slate_features)
+
+                if projections is None or projections.empty:
+                    print(f"  Skipping (no projections generated)")
+                    logger.warning(f"No projections generated for {test_date}")
                     continue
-
-                print(f"  Training {self.config.model_type} model...")
-                model = self.train_model(X_train, y_train)
-
-                print(f"  Building slate features...")
-                slate_features = self.feature_builder.build_slate_features(slate_data, training_data)
-
-                if slate_features.empty:
-                    print(f"  Skipping (no slate features generated)")
-                    logger.warning(f"No slate features for {test_date}")
-                    continue
-
-                print(f"  Generating projections for {len(slate_features)} players...")
-                projections = self.generate_projections(model, slate_features)
 
                 print(f"  Loading actual results...")
                 actuals = self.load_actual_results(test_date)
@@ -117,7 +137,7 @@ class WalkForwardBacktest:
 
         return self.aggregate_results()
 
-    def train_model(self, X_train: pd.DataFrame, y_train: pd.Series):
+    def dtrain_model(self, X_train: pd.DataFrame, y_train: pd.Series):
         logger.debug(f"Training {self.config.model_type} model on {len(X_train)} samples")
 
         if self.config.model_type == 'xgboost':
@@ -156,14 +176,20 @@ class WalkForwardBacktest:
     ) -> pd.DataFrame:
         logger.debug(f"Generating projections for {len(slate_features)} players")
 
+        metadata_cols = ['playerID', 'playerName', 'player_name', 'team', 'pos', 'salary', 'opponent']
         feature_cols = [col for col in slate_features.columns
-                       if col not in ['playerID', 'playerName', 'team', 'pos', 'salary']]
+                       if col not in metadata_cols and not col.startswith('_')]
 
         X = slate_features[feature_cols].fillna(0)
 
         predictions = model.predict(X)
 
-        projections = slate_features[['playerID', 'playerName', 'team', 'pos', 'salary']].copy()
+        player_name_col = 'player_name' if 'player_name' in slate_features.columns else 'playerName'
+        projections = slate_features[['playerID', player_name_col, 'team', 'pos', 'salary']].copy()
+
+        if player_name_col == 'player_name':
+            projections.rename(columns={'player_name': 'playerName'}, inplace=True)
+
         projections['projected_fpts'] = predictions
 
         projections['value'] = projections['projected_fpts'] / (projections['salary'] / 1000)
@@ -175,6 +201,90 @@ class WalkForwardBacktest:
 
         return projections
 
+    def generate_per_player_projections(
+        self,
+        slate_data: Dict[str, Any],
+        training_data: pd.DataFrame
+    ) -> pd.DataFrame:
+        logger.info("Generating per-player model projections")
+
+        salaries_df = slate_data['salaries'].copy()
+        all_projections = []
+
+        total_players = len(salaries_df)
+        players_with_models = 0
+
+        slate_date = slate_data['date']
+        models_dir = Path('data/models') / slate_date
+        models_dir.mkdir(parents=True, exist_ok=True)
+
+        for idx, player_row in salaries_df.iterrows():
+            player_id = player_row.get('playerID')
+            player_name = player_row.get('longName') or player_row.get('playerName', '')
+
+            player_training_data = training_data[training_data['playerID'] == player_id].copy()
+
+            if len(player_training_data) < self.config.min_player_games:
+                logger.debug(f"Skipping {player_name}: only {len(player_training_data)} games (need {self.config.min_player_games})")
+                continue
+
+            try:
+                X_train, y_train = self.feature_builder.build_rolling_window_features_training(
+                    player_training_data,
+                    window_sizes=self.config.rolling_window_sizes
+                )
+
+                if X_train.empty or y_train.empty or len(X_train) < 3:
+                    logger.debug(f"Insufficient features for {player_name}")
+                    continue
+
+                training_df = X_train.copy()
+                training_df['target'] = y_train
+                training_df['playerID'] = player_id
+                training_df['playerName'] = player_name
+
+                safe_player_name = "".join(c if c.isalnum() or c in (' ', '_', '-') else '_' for c in player_name)
+                safe_player_name = safe_player_name.replace(' ', '_')
+                player_file = models_dir / f"{safe_player_name}.parquet"
+
+                training_df.to_parquet(player_file, engine='pyarrow', index=False)
+                logger.debug(f"Saved training data for {player_name} to {player_file}")
+
+                model = self.train_model(X_train, y_train)
+
+                slate_data_single = {
+                    'salaries': salaries_df.iloc[[idx]],
+                    'date': slate_data['date']
+                }
+
+                slate_features = self.feature_builder.build_rolling_window_features_slate(
+                    slate_data_single,
+                    player_training_data,
+                    window_sizes=self.config.rolling_window_sizes
+                )
+
+                if slate_features.empty:
+                    logger.debug(f"No features generated for {player_name}")
+                    continue
+
+                projection = self.generate_projections(model, slate_features)
+                all_projections.append(projection)
+                players_with_models += 1
+
+            except Exception as e:
+                logger.warning(f"Error generating projection for {player_name}: {str(e)}")
+                continue
+
+        if not all_projections:
+            logger.warning("No player projections generated")
+            return pd.DataFrame()
+
+        projections_df = pd.concat(all_projections, ignore_index=True)
+        logger.info(f"Generated projections for {players_with_models}/{total_players} players using individual models")
+        logger.info(f"Saved {players_with_models} player training datasets to {models_dir}")
+
+        return projections_df
+
     def load_actual_results(self, date: str) -> pd.DataFrame:
         logger.debug(f"Loading actual results for {date}")
 
@@ -184,7 +294,7 @@ class WalkForwardBacktest:
             query = """
                 SELECT playerID, longName as playerName, team, pos,
                        pts, reb, ast, stl, blk, TOV, mins
-                FROM player_logs
+                FROM player_logs_extracted
                 WHERE gameDate = ?
             """
 

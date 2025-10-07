@@ -6,42 +6,33 @@ from typing import List, Dict, Any, Optional
 from pathlib import Path
 import logging
 
-from src.evaluation.backtest_config import BacktestConfig
-
 logger = logging.getLogger(__name__)
 
 
 class HistoricalDataLoader:
 
-    def __init__(self, config: BacktestConfig, db_path: str = None):
-        self.config = config
-        self.db_path = db_path or "nba_dfs.db"
+    def __init__(self, db_path: str = "nba_dfs.db"):
+        self.db_path = db_path
 
         if not Path(self.db_path).exists():
             raise FileNotFoundError(f"Database not found: {self.db_path}")
 
         logger.info(f"Initialized HistoricalDataLoader with database: {self.db_path}")
 
-    def load_slate_dates(self) -> List[str]:
+    def load_slate_dates(self, start_date: str, end_date: str) -> List[str]:
         try:
             conn = sqlite3.connect(self.db_path)
-
             query = """
                 SELECT DISTINCT gameDate
                 FROM games
                 WHERE gameDate >= ? AND gameDate <= ?
                 ORDER BY gameDate
             """
-
-            df = pd.read_sql_query(
-                query,
-                conn,
-                params=(self.config.start_date, self.config.end_date)
-            )
+            df = pd.read_sql_query(query, conn, params=(start_date, end_date))
             conn.close()
 
             slate_dates = df['gameDate'].tolist()
-            logger.info(f"Found {len(slate_dates)} slate dates from {self.config.start_date} to {self.config.end_date}")
+            logger.info(f"Found {len(slate_dates)} slate dates from {start_date} to {end_date}")
 
             return slate_dates
 
@@ -77,19 +68,13 @@ class HistoricalDataLoader:
 
         try:
             conn = sqlite3.connect(self.db_path)
-
             query = """
                 SELECT *
                 FROM player_logs_extracted
                 WHERE gameDate >= ? AND gameDate < ?
                 ORDER BY gameDate, playerID
             """
-
-            df = pd.read_sql_query(
-                query,
-                conn,
-                params=(start_date, end_date)
-            )
+            df = pd.read_sql_query(query, conn, params=(start_date, end_date))
             conn.close()
 
             if df.empty:
@@ -102,36 +87,12 @@ class HistoricalDataLoader:
                 raise ValueError(f"Lookahead bias: max date in data ({max_date_in_data}) >= end_date ({end_date})")
 
             logger.info(f"Loaded {len(df)} player logs from {df['gameDate'].min()} to {df['gameDate'].max()}")
-            logger.info(f"Date range check: {df['gameDate'].max()} < {end_date} (OK)")
 
             return df
 
         except Exception as e:
             logger.error(f"Failed to load historical player logs: {str(e)}")
             return pd.DataFrame()
-
-    def validate_data_completeness(self, date: str) -> Dict[str, bool]:
-        logger.debug(f"Validating data completeness for {date}")
-
-        slate_data = self.load_slate_data(date)
-
-        validation = {
-            'has_salaries': len(slate_data['salaries']) > 0,
-            'has_schedule': len(slate_data['schedule']) > 0,
-            'has_odds': len(slate_data['odds']) > 0,
-            'has_injuries': True,
-            'is_complete': False
-        }
-
-        validation['is_complete'] = (
-            validation['has_salaries'] and
-            validation['has_schedule'] and
-            validation['has_odds']
-        )
-
-        logger.debug(f"Data completeness: {validation}")
-
-        return validation
 
     def _load_dfs_salaries(self, date: str) -> pd.DataFrame:
         try:
@@ -170,7 +131,7 @@ class HistoricalDataLoader:
             if 'dfs_salary' in slate_salaries.columns:
                 slate_salaries['salary'] = pd.to_numeric(slate_salaries['dfs_salary'], errors='coerce')
 
-            logger.debug(f"Loaded {len(slate_salaries)} DFS salaries for {date} ({len(teams_playing)} teams)")
+            logger.debug(f"Loaded {len(slate_salaries)} DFS salaries for {date}")
             return slate_salaries
 
         except Exception as e:
@@ -180,13 +141,11 @@ class HistoricalDataLoader:
     def _load_schedule(self, date: str) -> pd.DataFrame:
         try:
             conn = sqlite3.connect(self.db_path)
-
             query = """
                 SELECT *
                 FROM games
                 WHERE gameDate = ?
             """
-
             df = pd.read_sql_query(query, conn, params=(date,))
             conn.close()
 
@@ -204,13 +163,11 @@ class HistoricalDataLoader:
     def _load_injuries(self, date: str) -> pd.DataFrame:
         try:
             conn = sqlite3.connect(self.db_path)
-
             query = """
                 SELECT *
                 FROM injuries
                 WHERE gameDate = ?
             """
-
             df = pd.read_sql_query(query, conn, params=(date,))
             conn.close()
 

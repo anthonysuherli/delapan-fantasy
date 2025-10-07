@@ -10,12 +10,18 @@ class BacktestConfig:
         start_date: str,
         end_date: str,
         lookback_days: int = 90,
-        model_type: str = 'xgboost'
+        model_type: str = 'xgboost',
+        rolling_window_sizes: Optional[List[int]] = None,
+        per_player_models: bool = False,
+        min_player_games: int = 10
     ):
         self.start_date = start_date
         self.end_date = end_date
         self.lookback_days = lookback_days
         self.model_type = model_type
+        self.rolling_window_sizes = rolling_window_sizes if rolling_window_sizes is not None else [4]
+        self.per_player_models = per_player_models
+        self.min_player_games = min_player_games
 
         self.model_params = {
             'max_depth': 6,
@@ -27,15 +33,7 @@ class BacktestConfig:
             'random_state': 42
         }
 
-        self.features_to_use = [
-            'pts_avg_3', 'pts_avg_5', 'pts_avg_10',
-            'reb_avg_3', 'reb_avg_5',
-            'ast_avg_3', 'ast_avg_5',
-            'mins_avg_5', 'usage_rate',
-            'pts_ewma', 'pts_std_5',
-            'fpts_avg_3', 'fpts_avg_5', 'fpts_avg_10',
-            'fpts_ewma', 'fpts_std_5'
-        ]
+        self.features_to_use = self._generate_rolling_feature_names()
 
         self.cash_lineups_per_slate = 3
         self.gpp_lineups_per_slate = 150
@@ -71,12 +69,26 @@ class BacktestConfig:
         if self.model_type not in ['xgboost', 'random_forest', 'linear', 'ensemble']:
             raise ValueError(f"Unsupported model_type: {self.model_type}")
 
+    def _generate_rolling_feature_names(self) -> List[str]:
+        """Generate feature names for rolling window features based on window sizes."""
+        base_stats = ['dreb', 'fg2_pct', 'ft_pct', 'oreb', 'ast', 'fg3a']
+        calcs = ['mean', 'std']
+        features = []
+        for window in self.rolling_window_sizes:
+            
+
+        features.append('games_available')
+        return features
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             'start_date': self.start_date,
             'end_date': self.end_date,
             'lookback_days': self.lookback_days,
             'model_type': self.model_type,
+            'rolling_window_sizes': self.rolling_window_sizes,
+            'per_player_models': self.per_player_models,
+            'min_player_games': self.min_player_games,
             'model_params': self.model_params,
             'features': self.features_to_use,
             'cash_lineups_per_slate': self.cash_lineups_per_slate,
@@ -91,7 +103,10 @@ class BacktestConfig:
             start_date=config_dict['start_date'],
             end_date=config_dict['end_date'],
             lookback_days=config_dict.get('lookback_days', 90),
-            model_type=config_dict.get('model_type', 'xgboost')
+            model_type=config_dict.get('model_type', 'xgboost'),
+            rolling_window_sizes=config_dict.get('rolling_window_sizes', [4]),
+            per_player_models=config_dict.get('per_player_models', False),
+            min_player_games=config_dict.get('min_player_games', 10)
         )
 
         if 'model_params' in config_dict:

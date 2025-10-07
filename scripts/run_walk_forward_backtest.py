@@ -1,3 +1,13 @@
+"""
+Run walk-forward backtest for NBA DFS projections.
+
+Refactored to use simplified module structure:
+- src.backtest (consolidated backtest logic)
+- src.features (feature engineering)
+- src.metrics (evaluation)
+- src.data (data loading)
+"""
+
 import sys
 from pathlib import Path
 import logging
@@ -6,9 +16,7 @@ import json
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.evaluation.backtest_config import BacktestConfig
-from src.evaluation.walk_forward import WalkForwardBacktest
-from src.evaluation.analysis import analyze_backtest_results, generate_backtest_report
+from src.backtest import BacktestConfig, run_backtest
 
 logging.basicConfig(
     level=logging.INFO,
@@ -48,9 +56,11 @@ def main():
         help='Model type (default: xgboost)'
     )
     parser.add_argument(
-        '--config',
-        type=str,
-        help='Path to config JSON file (overrides other args)'
+        '--windows',
+        type=int,
+        nargs='+',
+        default=[4],
+        help='Window sizes for rolling features (default: 4). Examples: --windows 4, --windows 3 4 5 10'
     )
     parser.add_argument(
         '--db',
@@ -71,6 +81,17 @@ def main():
         help='Minimum training games required (default: 500)'
     )
     parser.add_argument(
+        '--per-player-models',
+        action='store_true',
+        help='Train separate model for each player'
+    )
+    parser.add_argument(
+        '--min-player-games',
+        type=int,
+        default=10,
+        help='Minimum games for per-player models (default: 10)'
+    )
+    parser.add_argument(
         '--no-save-daily',
         action='store_true',
         help='Do not save daily results'
@@ -86,19 +107,18 @@ def main():
     if args.debug:
         logging.getLogger().setLevel(logging.DEBUG)
 
-    if args.config:
-        logger.info(f"Loading config from {args.config}")
-        config = BacktestConfig.from_json(args.config)
-    else:
-        config = BacktestConfig(
-            start_date=args.start,
-            end_date=args.end,
-            lookback_days=args.lookback,
-            model_type=args.model
-        )
-        config.output_dir = args.output_dir
-        config.min_training_games = args.min_training_games
-        config.save_daily_results = not args.no_save_daily
+    config = BacktestConfig(
+        start_date=args.start,
+        end_date=args.end,
+        lookback_days=args.lookback,
+        model_type=args.model,
+        rolling_window_sizes=args.windows,
+        per_player_models=args.per_player_models,
+        min_player_games=args.min_player_games,
+        min_training_games=args.min_training_games,
+        save_daily_results=not args.no_save_daily,
+        output_dir=args.output_dir
+    )
 
     print("\n" + "="*80)
     print("NBA DFS WALK-FORWARD BACKTEST")
@@ -106,27 +126,39 @@ def main():
     print(f"Period: {config.start_date} to {config.end_date}")
     print(f"Training Window: {config.lookback_days} days")
     print(f"Model: {config.model_type}")
+    windows_str = ', '.join(map(str, config.rolling_window_sizes))
+    num_features = len(config.rolling_window_sizes) * 6 + 1
+    print(f"Rolling Windows: [{windows_str}] ({num_features} features)")
     print(f"Min Training Games: {config.min_training_games}")
+    print(f"Per-Player Models: {config.per_player_models}")
+    if config.per_player_models:
+        print(f"Min Player Games: {config.min_player_games}")
     print(f"Output Directory: {config.output_dir}")
     print("="*80)
 
     config_path = Path(config.output_dir) / 'backtest_config.json'
-    config.to_json(str(config_path))
+    config.save(str(config_path))
     logger.info(f"Config saved to {config_path}")
 
-    backtest = WalkForwardBacktest(config, db_path=args.db)
-
-    results = backtest.run()
+    results = run_backtest(config, db_path=args.db)
 
     if 'error' in results:
         print(f"\nERROR: {results['error']}")
         return 1
 
     print("\n" + "="*80)
-    print("GENERATING REPORT")
+    print("BACKTEST RESULTS")
     print("="*80)
-
-    generate_backtest_report(results, config.output_dir)
+    print(f"Slates Processed: {results['num_slates']}")
+    print(f"Date Range: {results['date_range']}")
+    print(f"\nMean MAPE: {results['mean_mape']:.2f}%")
+    print(f"Median MAPE: {results['median_mape']:.2f}%")
+    print(f"Std MAPE: {results['std_mape']:.2f}%")
+    print(f"\nMean RMSE: {results['mean_rmse']:.2f}")
+    print(f"Mean Correlation: {results['mean_correlation']:.3f}")
+    print(f"\nTotal Players: {results['total_players_evaluated']}")
+    print(f"Avg Players/Slate: {results['avg_players_per_slate']:.1f}")
+    print("="*80)
 
     results_path = Path(config.output_dir) / 'backtest_results.json'
     with open(results_path, 'w') as f:
