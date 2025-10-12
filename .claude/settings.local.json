@@ -1,7 +1,12 @@
 {
   "permissions": {
     "allow": [
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(git rm:*)",
+      "Bash(sqlite3:*)",
+      "Bash(cat:*)",
+      "Bash(npm install:*)",
+      "Bash(jupyter nbconvert:*)"
     ],
     "deny": [],
     "ask": []

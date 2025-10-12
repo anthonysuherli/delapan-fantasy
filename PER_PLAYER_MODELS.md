@@ -2,7 +2,7 @@
 
 ## Overview
 
-The walk-forward backtest now supports training individual XGBoost models for each player, with models saved in a structured directory format.
+Per-player XGBoost models train individual models for each player to capture player-specific patterns. Implemented in notebooks/backtest_1d_by_player.ipynb with configuration-driven features and Bayesian hyperparameter optimization.
 
 ## Implementation Details
 
@@ -55,48 +55,46 @@ Each player gets two files:
 
 ## Usage
 
-### Configuration Parameters
+### Using Notebook (Recommended)
+
+Open notebooks/backtest_1d_by_player.ipynb and configure:
 
 ```python
-backtest = WalkForwardBacktest(
-    db_path='nba_dfs.db',
-    start_date='20240101',
-    end_date='20240131',
-    lookback_days=90,
-    model_type='xgboost',
-    model_params={
-        'n_estimators': 200,
-        'max_depth': 6,
-        'learning_rate': 0.1,
-        'random_state': 42
-    },
-    rolling_window_sizes=[3, 5, 10],
-    output_dir='data/backtest_results',
-    per_player_models=True,        # ENABLE PER-PLAYER MODELS
-    min_player_games=10             # MINIMUM GAMES REQUIRED
-)
+# Configuration
+SLATE_DATE = '20250205'
+LOOKBACK_DAYS = 365
+MIN_GAMES_THRESHOLD = 10
+
+# Feature configuration
+feature_config = load_feature_config('default_features')
+
+# XGBoost hyperparameters (use Bayesian optimized values)
+xgb_params = {
+    'max_depth': 5,
+    'learning_rate': 0.08,
+    'n_estimators': 289,
+    'subsample': 0.82,
+    'colsample_bytree': 0.75,
+    'objective': 'reg:squarederror',
+    'random_state': 42
+}
 ```
 
-**Key Parameters:**
+Run notebook to:
+1. Load slate and historical data
+2. Build features from YAML config
+3. Train per-player XGBoost models
+4. Generate projections
+5. Calculate MAPE, RMSE, MAE, Correlation
+6. Analyze errors by salary tier
 
-- `per_player_models=True`: Enables per-player model training
-- `min_player_games=10`: Minimum games required in lookback period to train a model for that player
+### Key Parameters
 
-### Running Backtest with Per-Player Models
-
-```python
-from src.walk_forward_backtest import WalkForwardBacktest
-
-backtest = WalkForwardBacktest(
-    db_path='nba_dfs.db',
-    start_date='20240115',
-    end_date='20240115',
-    per_player_models=True,
-    min_player_games=10
-)
-
-results = backtest.run()
-```
+- `SLATE_DATE`: Date to generate projections for
+- `LOOKBACK_DAYS`: Historical data window (typically 365 for 1 season)
+- `MIN_GAMES_THRESHOLD`: Minimum games required to train model (default: 10)
+- `feature_config`: Load from config/features/*.yaml
+- `xgb_params`: Hyperparameters (use optimize_xgboost_hyperparameters.py for tuning)
 
 ### Loading Saved Models
 
@@ -148,30 +146,31 @@ Each player model uses:
 
 ## Benefits of Per-Player Models
 
-1. **Personalized predictions**: Each model learns player-specific patterns
-2. **Better accuracy**: Captures individual player tendencies and consistency
-3. **Interpretability**: Can analyze model importance features per player
-4. **Flexibility**: Can use different model parameters per player in future
-5. **Reproducibility**: Models are saved with all metadata for exact reproduction
+1. **Personalized predictions**: Each model learns player-specific patterns and consistency
+2. **Elite player accuracy**: 32.9% MAPE for $8k+ players (near 30% target)
+3. **Interpretability**: Analyze feature importance per player
+4. **Flexibility**: Different hyperparameters per player in future
+5. **Reproducibility**: Models saved with metadata for exact reproduction
 
-## Notebook Usage
+## Performance Benchmarks
 
-Use the [walk_forward_backtest_runner.ipynb](notebooks/walk_forward_backtest_runner.ipynb) notebook:
+Single-day backtest (2025-02-05):
+- Elite players ($8k+): 32.9% MAPE, 25 players
+- High salary ($6-8k): 51.8% MAPE, 28 players
+- Mid salary ($4-6k): 76.8% MAPE, 75 players
+- Low salary ($0-4k): 103.6% MAPE, 111 players
+- Overall: 81.18% MAPE, 0.728 correlation
+- Coverage: 96.4% (239/248 matched players)
 
-1. Set `PER_PLAYER_MODELS = True` in the configuration cell
-2. Run backtest
-3. Inspect saved models in the "Inspect Per-Player Models" section
-4. View model metadata and training sample distributions
+Elite tier performance near production target. Low-output players require different approach (classification vs regression, contextual features).
 
-## Testing
+## Current Notebooks
 
-Test script available at `scripts/test_per_player_models.py`:
+1. backtest_1d_by_player.ipynb: Single-day per-player backtest with full analysis
+2. backtest_1d_by_slate.ipynb: Slate-level baseline for comparison
+3. backtest_season.ipynb: Season-long walk-forward validation
 
-```bash
-python scripts/test_per_player_models.py
-```
-
-This runs a single-date backtest to verify model saving functionality.
+See notebooks/performance_report_20250205.md for detailed analysis.
 
 ## Model File Size
 
@@ -182,16 +181,38 @@ This runs a single-date backtest to verify model saving functionality.
 
 ## Performance Considerations
 
-- **Training time**: Longer than single global model (trains N models instead of 1)
-- **Memory**: Moderate (models trained sequentially, not in parallel)
-- **Storage**: More disk space required for model files
-- **Prediction time**: Similar to global model (one prediction per player)
+- **Training time**: ~5-10 minutes for 500+ players (sequential training)
+- **Memory**: Moderate (models trained one at a time)
+- **Storage**: 5-50 MB per day (500 players x 50-500 KB per model)
+- **Prediction time**: Fast (one forward pass per player)
 
-## Future Enhancements
+## Known Issues and Roadmap
 
-1. Parallel model training across players
-2. Model versioning and comparison
-3. Automatic model retraining based on performance
-4. Ensemble predictions combining multiple player models
-5. Feature importance analysis per player
-6. Model performance tracking over time
+### Critical Issues
+1. Low-output player MAPE inflation (103.6% for $0-4k tier)
+   - Division by near-zero inflates percentage errors
+   - Need classification approach or alternative metric
+2. Missing injury/inactive status filtering
+   - Models assume historical minutes continue
+   - Need DNP detection before prediction
+3. No contextual features
+   - Missing: home/away, rest days, opponent strength
+   - Missing: starter/bench role, recent form
+4. Variance prediction failure
+   - Captures mean well (0.728 correlation)
+   - Cannot predict hot streaks or cold streaks
+
+### Immediate Priority
+1. Add injury/inactive filtering before prediction
+2. Implement starter/bench role indicators
+3. Add home/away and rest day features
+4. Multi-day backtesting for validation
+
+### Future Enhancements
+1. Opponent defensive rating features
+2. Minutes projection model (separate from points projection)
+3. Ensemble methods (XGBoost + Random Forest)
+4. Quantile regression for confidence intervals
+5. Per-player hyperparameter tuning
+6. Parallel training across players
+7. Model versioning and performance tracking over time

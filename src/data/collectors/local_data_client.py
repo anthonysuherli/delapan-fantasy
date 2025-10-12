@@ -3,6 +3,7 @@ import pandas as pd
 from pathlib import Path
 from typing import Dict, Any, Optional
 import logging
+from src.config.paths import DB_PATH, DATA_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -11,9 +12,9 @@ class LocalDataClient:
 
     def __init__(self, db_path: str = None, data_dir: str = None):
         if db_path is None:
-            db_path = r"C:\Users\antho\OneDrive\Documents\Repositories\delapan-fantasy\nba_dfs.db"
+            db_path = DB_PATH
         if data_dir is None:
-            data_dir = r"C:\Users\antho\OneDrive\Documents\Repositories\delapan-fantasy\data"
+            data_dir = DATA_DIR
 
         self.db_path = Path(db_path)
         self.data_dir = Path(data_dir)
