@@ -20,7 +20,7 @@ delapan-fantasy/
 │   ├── data/                 # Data layer
 │   │   ├── collectors/       # API integrations
 │   │   │   ├── tank01_client.py      # Tank01 RapidAPI client
-│   │   │   ├── endpoints.py          # API endpoint definitions
+│   │   │   ├── endpoints.py          # API endpoint definions
 │   │   │   ├── local_data_client.py  # Local data access
 │   │   │   └── cache.py              # API response caching
 │   │   ├── storage/          # Storage backends
@@ -43,7 +43,7 @@ delapan-fantasy/
 │   │   ├── xgboost_model.py  # XGBoost implementation
 │   │   └── random_forest_model.py    # Random Forest
 │   ├── optimization/         # Lineup generation
-│   │   ├── base.py           # Optimizer & Constraint interfaces
+│   │   ├── base.py           # Optimizer & Constraint initterfaces
 │   │   ├── registry.py       # Optimizer registry
 │   │   ├── constraints/      # Constraint implementations
 │   │   │   └── draftkings.py         # DK rules
