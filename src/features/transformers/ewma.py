@@ -68,7 +68,7 @@ class EWMATransformer(FeatureTransformer):
 
             df[stat] = pd.to_numeric(df[stat], errors='coerce')
 
-            col_name = f'{stat}_ewma{self.span}'
+            col_name = f'ewma_{stat}_{self.span}'
             new_columns[col_name] = df.groupby('playerID')[stat].transform(
                 lambda x: x.shift(1).ewm(span=self.span, adjust=False).mean()
             )

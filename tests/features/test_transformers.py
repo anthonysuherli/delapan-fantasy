@@ -71,14 +71,14 @@ class TestRollingStatsTransformer:
         transformer.fit(sample_player_data)
         result = transformer.transform(sample_player_data)
 
-        assert 'pts_ma3' in result.columns
+        assert 'rolling_pts_mean_3' in result.columns
 
     def test_transform_creates_std_columns(self, sample_player_data):
         transformer = RollingStatsTransformer(windows=[3], stats=['pts'])
         transformer.fit(sample_player_data)
         result = transformer.transform(sample_player_data)
 
-        assert 'pts_std3' in result.columns
+        assert 'rolling_pts_std_3' in result.columns
 
     def test_transform_without_std(self, sample_player_data):
         transformer = RollingStatsTransformer(
@@ -89,8 +89,8 @@ class TestRollingStatsTransformer:
         transformer.fit(sample_player_data)
         result = transformer.transform(sample_player_data)
 
-        assert 'pts_ma3' in result.columns
-        assert 'pts_std3' not in result.columns
+        assert 'rolling_pts_mean_3' in result.columns
+        assert 'rolling_pts_std_3' not in result.columns
 
     def test_rolling_calculation_correctness(self, sample_player_data):
         transformer = RollingStatsTransformer(windows=[3], stats=['pts'])
@@ -98,7 +98,7 @@ class TestRollingStatsTransformer:
         result = transformer.transform(sample_player_data)
 
         expected_ma3_idx3 = (20 + 25 + 18) / 3
-        assert abs(result['pts_ma3'].iloc[3] - expected_ma3_idx3) < 0.01
+        assert abs(result['rolling_pts_mean_3'].iloc[3] - expected_ma3_idx3) < 0.01
 
     def test_multi_player_grouping(self, multi_player_data):
         transformer = RollingStatsTransformer(windows=[3], stats=['pts'])
@@ -108,7 +108,7 @@ class TestRollingStatsTransformer:
         player1_data = result[result['playerID'] == 'player1']
         player2_data = result[result['playerID'] == 'player2']
 
-        assert 'pts_ma3' in result.columns
+        assert 'rolling_pts_mean_3' in result.columns
         assert len(player1_data) == 5
         assert len(player2_data) == 5
 
@@ -195,21 +195,21 @@ class TestEWMATransformer:
         transformer.fit(sample_player_data)
         result = transformer.transform(sample_player_data)
 
-        assert 'pts_ewma3' in result.columns
+        assert 'ewma_pts_3' in result.columns
 
     def test_ewma_naming_convention(self, sample_player_data):
         transformer = EWMATransformer(span=5, stats=['pts'])
         transformer.fit(sample_player_data)
         result = transformer.transform(sample_player_data)
 
-        assert 'pts_ewma5' in result.columns
+        assert 'ewma_pts_5' in result.columns
 
     def test_multi_player_grouping(self, multi_player_data):
         transformer = EWMATransformer(span=3, stats=['pts'])
         transformer.fit(multi_player_data)
         result = transformer.transform(multi_player_data)
 
-        assert 'pts_ewma3' in result.columns
+        assert 'ewma_pts_3' in result.columns
 
     def test_transform_without_fit_raises_error(self, sample_player_data):
         transformer = EWMATransformer()

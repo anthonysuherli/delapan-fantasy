@@ -72,13 +72,13 @@ class RollingStatsTransformer(FeatureTransformer):
             df[stat] = pd.to_numeric(df[stat], errors='coerce')
 
             for window in self.windows:
-                ma_col = f'{stat}_ma{window}'
+                ma_col = f'rolling_{stat}_mean_{window}'
                 new_columns[ma_col] = df.groupby('playerID')[stat].transform(
                     lambda x: x.shift(1).rolling(window=window, min_periods=1).mean()
                 )
 
                 if self.include_std:
-                    std_col = f'{stat}_std{window}'
+                    std_col = f'rolling_{stat}_std_{window}'
                     new_columns[std_col] = df.groupby('playerID')[stat].transform(
                         lambda x: x.shift(1).rolling(window=window, min_periods=1).std()
                     )
