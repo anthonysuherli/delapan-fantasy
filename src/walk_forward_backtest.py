@@ -143,6 +143,7 @@ class WalkForwardBacktest:
         model_params: Optional[Dict] = None,
         feature_config: str = 'default_features',
         output_dir: str = 'data/backtest_results',
+        data_dir: Optional[str] = None,
         per_player_models: bool = False,
         min_player_games: int = 10,
         min_games_for_benchmark: int = 5,
@@ -161,7 +162,7 @@ class WalkForwardBacktest:
         self.model_type = model_type
         self.model_params = model_params or {}
         self.feature_config_name = feature_config
-        self.output_dir = output_dir
+        self.data_dir = data_dir
         self.per_player_models = per_player_models
         self.min_player_games = min_player_games
         self.min_games_for_benchmark = min_games_for_benchmark
@@ -172,6 +173,20 @@ class WalkForwardBacktest:
         self.save_predictions = save_predictions
         self.n_jobs = n_jobs
         self.rewrite_models = rewrite_models
+
+        if data_dir:
+            data_path = Path(data_dir)
+            db_path_obj = Path(db_path)
+            if not db_path_obj.is_absolute():
+                db_path = str(data_path / db_path)
+
+            output_path_obj = Path(output_dir)
+            if not output_path_obj.is_absolute():
+                self.output_dir = str(data_path / output_dir)
+            else:
+                self.output_dir = output_dir
+        else:
+            self.output_dir = output_dir
 
         storage = SQLiteStorage(db_path)
         self.loader = HistoricalDataLoader(storage)
@@ -212,6 +227,12 @@ class WalkForwardBacktest:
         Path(self.output_dir).mkdir(parents=True, exist_ok=True)
 
         logger.info(f"Initialized WalkForwardBacktest")
+        if data_dir:
+            logger.info(f"Architecture: Separated (data_dir={data_dir})")
+            logger.info(f"  Database: {db_path}")
+            logger.info(f"  Outputs: {self.output_dir}")
+        else:
+            logger.info(f"Architecture: Default (data in project directory)")
         logger.info(f"Training period: {train_start} to {train_end}")
         logger.info(f"Testing period: {test_start} to {test_end}")
         logger.info(f"Per-player models: {per_player_models}")

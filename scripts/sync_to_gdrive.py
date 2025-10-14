@@ -47,24 +47,27 @@ def sync_directory(source: Path, dest: Path, file_pattern: str = '*.parquet') ->
 def sync_project_to_gdrive(
     local_dir: str,
     gdrive_dir: str,
-    data_only: bool = False
+    include_db: bool = True
 ) -> None:
     """
-    Sync NBA DFS project to Google Drive.
+    Sync NBA DFS data to Google Drive.
+
+    Code is cloned from GitHub in Colab, only data is synced to Drive.
 
     Args:
         local_dir: Local project directory
         gdrive_dir: Google Drive mount point
-        data_only: If True, only sync data files
+        include_db: If True, also sync SQLite database
     """
     local_root = Path(local_dir)
     gdrive_root = Path(gdrive_dir) / 'nba_dfs'
 
-    logger.info(f"Syncing from {local_root} to {gdrive_root}")
+    logger.info(f"Syncing data from {local_root} to {gdrive_root}")
+    logger.info("(Code will be cloned from GitHub in Colab)")
 
     gdrive_root.mkdir(parents=True, exist_ok=True)
 
-    logger.info("Syncing data files...")
+    logger.info("\nSyncing data files...")
     data_dirs = ['box_scores', 'dfs_salaries', 'betting_odds', 'schedule', 'injuries', 'projections']
 
     total_copied = 0
@@ -79,44 +82,32 @@ def sync_project_to_gdrive(
         else:
             logger.warning(f"  {data_type}: directory not found")
 
-    logger.info(f"Data sync complete: {total_copied} files copied")
+    logger.info(f"\nData sync complete: {total_copied} files copied")
 
-    if not data_only:
-        logger.info("Syncing source code...")
+    if include_db:
+        db_file = local_root / 'nba_dfs.db'
+        if db_file.exists():
+            dest_db = gdrive_root / 'nba_dfs.db'
+            logger.info("\nSyncing database...")
+            shutil.copy2(db_file, dest_db)
+            logger.info(f"  Database copied: {db_file.stat().st_size / (1024**2):.1f} MB")
+        else:
+            logger.warning("\nDatabase not found (optional)")
 
-        src_dirs = ['src', 'config', 'scripts']
-        for dir_name in src_dirs:
-            source = local_root / dir_name
-            dest = gdrive_root / dir_name
-
-            if source.exists():
-                if dest.exists():
-                    shutil.rmtree(dest)
-                shutil.copytree(source, dest)
-                logger.info(f"  {dir_name}: copied")
-            else:
-                logger.warning(f"  {dir_name}: directory not found")
-
-        config_files = ['requirements.txt', 'README.md', 'CLAUDE.md']
-        for file_name in config_files:
-            source = local_root / file_name
-            dest = gdrive_root / file_name
-
-            if source.exists():
-                shutil.copy2(source, dest)
-                logger.info(f"  {file_name}: copied")
-
-        logger.info("Source code sync complete")
-
-    logger.info(f"\nSync complete! Project ready at: {gdrive_root}")
-    logger.info("Next steps:")
-    logger.info("1. Upload notebooks/colab_backtest.ipynb to Google Colab")
-    logger.info("2. Mount Google Drive in Colab")
-    logger.info("3. Run the notebook")
+    logger.info(f"\n{'='*60}")
+    logger.info("Sync complete!")
+    logger.info(f"{'='*60}")
+    logger.info(f"Data location: {gdrive_root / 'data'}")
+    logger.info("\nNext steps:")
+    logger.info("1. Go to https://colab.research.google.com/")
+    logger.info("2. Upload notebooks/colab_backtest.ipynb")
+    logger.info("3. Run all cells (code auto-clones from GitHub)")
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Sync NBA DFS project to Google Drive')
+    parser = argparse.ArgumentParser(
+        description='Sync NBA DFS data to Google Drive (code comes from GitHub)'
+    )
 
     parser.add_argument(
         '--local-dir',
@@ -133,9 +124,9 @@ def main():
     )
 
     parser.add_argument(
-        '--data-only',
+        '--no-db',
         action='store_true',
-        help='Sync only data files (skip source code)'
+        help='Skip syncing SQLite database'
     )
 
     args = parser.parse_args()
@@ -143,7 +134,7 @@ def main():
     sync_project_to_gdrive(
         local_dir=args.local_dir,
         gdrive_dir=args.gdrive_dir,
-        data_only=args.data_only
+        include_db=not args.no_db
     )
 
 

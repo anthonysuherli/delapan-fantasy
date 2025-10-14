@@ -3,6 +3,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import os
+import argparse
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 import pandas as pd
@@ -91,6 +92,14 @@ def collect_games(client, start_date, end_date, output_dir):
 
 
 def main():
+    import argparse
+
+    parser = argparse.ArgumentParser(description='Collect NBA games data')
+    parser.add_argument('--start-date', help='Start date in YYYYMMDD format')
+    parser.add_argument('--end-date', help='End date in YYYYMMDD format')
+    parser.add_argument('--output-dir', default='data', help='Base output directory (default: data)')
+    args = parser.parse_args()
+
     api_key = os.getenv('TANK01_API_KEY')
 
     if not api_key:
@@ -104,45 +113,54 @@ def main():
     print(f"API Key: {api_key[:10]}...")
     print(f"Rate limit: {client.rate_limit} requests/month")
     print(f"Current usage: {client.request_count}")
+    print(f"Output directory: {args.output_dir}")
     print("=" * 80)
 
-    print("\nCollecting 2024-2025 NBA Season Games")
-    print("-" * 80)
+    if args.start_date and args.end_date:
+        print(f"\nCollecting games from {args.start_date} to {args.end_date}")
+        collect_games(
+            client=client,
+            start_date=args.start_date,
+            end_date=args.end_date,
+            output_dir=f'{args.output_dir}/games'
+        )
+    else:
+        print("\nCollecting 2024-2025 NBA Season Games")
+        print("-" * 80)
 
-    season_2024_start = '20241022'
-    season_2024_end = '20241231'
+        season_2024_start = '20241022'
+        season_2024_end = '20241231'
 
-    season_2025_start = '20250101'
-    season_2025_end = '20250620'
+        season_2025_start = '20250101'
+        season_2025_end = '20250620'
 
-    print(f"\nPhase 1: October - December 2024 ({season_2024_start} to {season_2024_end})")
-    collect_games(
-        client=client,
-        start_date=season_2024_start,
-        end_date=season_2024_end,
-        output_dir='data/games'
-    )
+        print(f"\nPhase 1: October - December 2024 ({season_2024_start} to {season_2024_end})")
+        collect_games(
+            client=client,
+            start_date=season_2024_start,
+            end_date=season_2024_end,
+            output_dir=f'{args.output_dir}/games'
+        )
 
-    if client.get_remaining_requests() < 200:
-        print("\nWARNING: Low API requests remaining. Stopping before Phase 2.")
-        print(f"Remaining requests: {client.get_remaining_requests()}")
-        return 0
+        if client.get_remaining_requests() < 200:
+            print("\nWARNING: Low API requests remaining. Stopping before Phase 2.")
+            print(f"Remaining requests: {client.get_remaining_requests()}")
+            return 0
 
-    print(f"\n\nPhase 2: January - June 2025 ({season_2025_start} to {season_2025_end})")
-    collect_games(
-        client=client,
-        start_date=season_2025_start,
-        end_date=season_2025_end,
-        output_dir='data/games'
-    )
+        print(f"\n\nPhase 2: January - June 2025 ({season_2025_start} to {season_2025_end})")
+        collect_games(
+            client=client,
+            start_date=season_2025_start,
+            end_date=season_2025_end,
+            output_dir=f'{args.output_dir}/games'
+        )
 
     print("\n" + "=" * 80)
     print("ALL PHASES COMPLETE")
     print("=" * 80)
     print(f"Total API requests used: {client.request_count}")
     print(f"Remaining requests: {client.get_remaining_requests()}")
-    print("\nData structure:")
-    print("  data/games/YYYY/MM/DD.parquet")
+    print(f"\nData structure: {args.output_dir}/games/YYYY/MM/DD.parquet")
     print("  Each parquet file contains a DataFrame of all games for that day")
     print("=" * 80)
 

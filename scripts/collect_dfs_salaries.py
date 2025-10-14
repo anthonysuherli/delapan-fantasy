@@ -22,7 +22,7 @@ from src.data.collectors.tank01_client import Tank01Client
 from src.data.storage_utils import get_partitioned_path
 
 
-def save_dfs_salaries(data: dict, date_str: str, base_dir: str = "./data"):
+def save_dfs_salaries(data: dict, date_str: str, base_dir: str = "./data/inputs"):
     if "body" not in data:
         return False
 
@@ -89,19 +89,19 @@ def save_projections(data: dict, date_str: str, base_dir: str = "./data/inputs")
     return True
 
 
-def check_existing_files(date_str: str, include_betting: bool, include_projections: bool) -> bool:
-    dfs_path = get_partitioned_path(base_dir="./data/inputs/dfs_salaries", date=date_str)
+def check_existing_files(date_str: str, include_betting: bool, include_projections: bool, base_dir: str = "./data/inputs") -> bool:
+    dfs_path = get_partitioned_path(base_dir=f"{base_dir}/dfs_salaries", date=date_str)
 
     if not dfs_path.exists():
         return False
 
     if include_betting:
-        betting_path = get_partitioned_path(base_dir="./data/inputs/betting_odds", date=date_str)
+        betting_path = get_partitioned_path(base_dir=f"{base_dir}/betting_odds", date=date_str)
         if not betting_path.exists():
             return False
 
     if include_projections:
-        projections_path = get_partitioned_path(base_dir="./data/inputs/projections", date=date_str)
+        projections_path = get_partitioned_path(base_dir=f"{base_dir}/projections", date=date_str)
         if not projections_path.exists():
             return False
 
@@ -143,6 +143,11 @@ def main():
         default=True,
         help='Skip dates with no games (default: True)'
     )
+    parser.add_argument(
+        '--output-dir',
+        default='./data/inputs',
+        help='Base output directory (default: ./data/inputs)'
+    )
 
     args = parser.parse_args()
 
@@ -164,6 +169,7 @@ def main():
     print("DFS Data Collection")
     print("=" * 80)
     print(f"Date range: {args.start_date} to {args.end_date} ({total_dates} days)")
+    print(f"Output directory: {args.output_dir}")
     print(f"Collecting: salaries", end="")
     if args.include_betting_odds:
         print(", betting odds", end="")
@@ -182,7 +188,7 @@ def main():
     for current_date in tqdm(date_range, desc="Collecting DFS data"):
         date_str = current_date.strftime('%Y%m%d')
 
-        if check_existing_files(date_str, args.include_betting_odds, args.include_projections):
+        if check_existing_files(date_str, args.include_betting_odds, args.include_projections, args.output_dir):
             dates_skipped += 1
             continue
 
@@ -198,15 +204,15 @@ def main():
         if dfs_response.get('statusCode') != 200:
             continue
 
-        saved_salaries = save_dfs_salaries(dfs_response, date_str)
+        saved_salaries = save_dfs_salaries(dfs_response, date_str, args.output_dir)
 
         if args.include_betting_odds:
             betting_response = client.get_betting_odds(game_date=date_str)
-            saved_betting = save_betting_odds(betting_response, date_str)
+            saved_betting = save_betting_odds(betting_response, date_str, args.output_dir)
 
         if args.include_projections:
             projections_response = client.get_projections(num_of_days=7)
-            saved_projections = save_projections(projections_response, date_str)
+            saved_projections = save_projections(projections_response, date_str, args.output_dir)
 
         dates_processed += 1
 

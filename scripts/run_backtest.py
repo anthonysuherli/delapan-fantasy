@@ -36,6 +36,12 @@ def parse_args():
     )
 
     parser.add_argument(
+        "--data-dir",
+        default=None,
+        help="Data directory for separated architecture (optional). If set, db-path and output-dir are relative to this directory."
+    )
+
+    parser.add_argument(
         "--test-start",
         required=True,
         help="Test start date (YYYYMMDD format)"
@@ -167,6 +173,15 @@ def main():
     print("="*80)
     print("NBA DFS WALK-FORWARD BACKTEST")
     print("="*80)
+    if args.data_dir:
+        print(f"Architecture: Separated")
+        print(f"  Data Directory: {args.data_dir}")
+        print(f"  Database: {args.db_path} (relative to data-dir)")
+        print(f"  Output: {args.output_dir} (relative to data-dir)")
+    else:
+        print(f"Architecture: Default (data in project directory)")
+        print(f"  Database: {args.db_path}")
+        print(f"  Output: {args.output_dir}")
     print(f"Test Period: {args.test_start} to {args.test_end}")
     print(f"Model Type: {args.model_type}")
     print(f"Feature Config: {args.feature_config}")
@@ -202,6 +217,7 @@ def main():
 
     backtest = WalkForwardBacktest(
         db_path=args.db_path,
+        data_dir=args.data_dir,
         train_start=train_start,
         train_end=train_end,
         test_start=args.test_start,

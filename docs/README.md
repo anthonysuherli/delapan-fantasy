@@ -6,6 +6,8 @@ Complete documentation for the NBA DFS machine learning pipeline.
 
 - [Scripts Guide](SCRIPTS_GUIDE.md) - Complete guide to all scripts with usage examples
 - [Feature Configuration](FEATURE_CONFIG_INTEGRATION.md) - YAML-based feature pipeline configuration
+- [Local Separated Setup](LOCAL_SEPARATED_SETUP.md) - Separated architecture for local development
+- [Google Colab Setup](COLAB_SETUP.md) - Cloud training on Google Colab
 - [Project Overview](../CLAUDE.md) - Architecture, modules, and development workflow
 - [Scripts README](../scripts/README.md) - Detailed script documentation
 
@@ -41,6 +43,35 @@ python scripts/run_backtest.py --test-start 20250205 --test-end 20250205
 python scripts/run_backtest.py --test-start 20250201 --test-end 20250207 --per-player
 ```
 
+## Deployment Options
+
+### Integrated vs Separated Architecture
+
+**Integrated (default):** Code and data in same directory. Simple setup.
+
+**Separated:** Code and data in different locations. Clean git repo, flexible storage.
+
+```bash
+# Separated architecture usage
+python scripts/run_backtest.py \
+  --data-dir D:\NBA_Data \
+  --test-start 20250201 \
+  --test-end 20250207 \
+  --per-player
+```
+
+See [LOCAL_SEPARATED_SETUP.md](LOCAL_SEPARATED_SETUP.md) for complete guide.
+
+### Cloud Training
+
+Free machine during training with Google Colab:
+
+- **Colab Free:** $0/month, ~21 min/slate
+- **Colab Pro:** $10/month, ~10.4 min/slate (recommended)
+- **Colab Pro+:** $50/month, ~5.2 min/slate
+
+See [COLAB_SETUP.md](COLAB_SETUP.md) for setup instructions.
+
 ## Documentation Structure
 
 ### Core Documentation
@@ -56,6 +87,22 @@ python scripts/run_backtest.py --test-start 20250201 --test-end 20250207 --per-p
   - Rolling statistics transformers
   - EWMA transformers
   - Custom feature creation
+
+### Deployment Documentation
+
+- **[LOCAL_SEPARATED_SETUP.md](LOCAL_SEPARATED_SETUP.md)** - Separated architecture guide
+  - Directory structure and benefits
+  - Setup instructions
+  - Path resolution and configuration
+  - Migration from integrated architecture
+  - Storage recommendations
+
+- **[COLAB_SETUP.md](COLAB_SETUP.md)** - Google Colab training guide
+  - Colab tier comparison and pricing
+  - Setup and data sync instructions
+  - Configuration and optimization
+  - Troubleshooting common issues
+  - Best practices for cloud training
 
 ### Project Documentation
 

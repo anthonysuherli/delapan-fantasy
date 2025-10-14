@@ -10,6 +10,15 @@ Google Colab provides free cloud compute with:
 - 12-24 hour session limits
 - Persistent storage via Google Drive
 
+## Architecture
+
+**Best Practice Setup:**
+- **Code**: Cloned from GitHub to `/content/` (fast operations, always up-to-date)
+- **Data**: Synced to Google Drive (persistent between sessions)
+- **Outputs**: Saved to Google Drive (persistent between sessions)
+
+This avoids git operations on Drive's FUSE filesystem and ensures fast execution.
+
 ## Pricing Comparison
 
 | Tier | Cost | Cores | RAM | Session | Speed/Slate | Season Cost |
@@ -23,12 +32,13 @@ Google Colab provides free cloud compute with:
 ## Prerequisites
 
 1. Google account
-2. Local data collected via `scripts/collect_games.py`
-3. Google Drive Desktop app (recommended) or web interface
+2. GitHub repository with your code (https://github.com/anthonysuherli/delapan-fantasy)
+3. Local data collected via `scripts/collect_games.py`
+4. Google Drive Desktop app (for data sync) or web interface
 
 ## Setup Instructions
 
-### Step 1: Install Google Drive Desktop (Recommended)
+### Step 1: Install Google Drive Desktop
 
 **Windows/Mac:**
 1. Download: https://www.google.com/drive/download/
@@ -41,58 +51,32 @@ ls G:\MyDrive  # Windows
 ls ~/Google\ Drive/My\ Drive  # Mac
 ```
 
-### Step 2: Sync Project to Google Drive
+### Step 2: Sync Data to Google Drive
 
-**Option A: Using sync script (Recommended)**
+**Only data files are synced. Code comes from GitHub.**
 
 ```bash
 python scripts/sync_to_gdrive.py --gdrive-dir G:\MyDrive
 ```
 
-This copies:
-- All data files from `data/inputs/`
-- Source code from `src/`, `config/`, `scripts/`
-- Configuration files
+This syncs:
+- All parquet files from `data/inputs/box_scores/`, `dfs_salaries/`, etc.
+- SQLite database `nba_dfs.db`
 
-**Option B: Manual upload**
-
-1. Create folder structure:
-   ```
-   Google Drive/
-   └── nba_dfs/
-       ├── src/
-       ├── config/
-       ├── scripts/
-       └── data/
-           └── inputs/
-               ├── box_scores/
-               ├── dfs_salaries/
-               ├── betting_odds/
-               └── schedule/
-   ```
-
-2. Upload files via Drive web interface or desktop app
-
-**Option C: GitHub integration**
-
-Upload to GitHub and clone in Colab:
-```python
-!git clone https://github.com/your-username/delapan-fantasy.git
-!cp -r delapan-fantasy/* /content/drive/MyDrive/nba_dfs/
-```
+**What NOT to sync:**
+- Source code (`src/`, `config/`, `scripts/`) - cloned from GitHub
+- Notebooks - uploaded directly to Colab
+- Requirements - in repository
 
 ### Step 3: Create SQLite Database (First Time Only)
 
-Run locally or in Colab:
+Run locally:
 
 ```bash
 python scripts/load_games_to_db.py
 ```
 
-Copy `nba_dfs.db` to Google Drive:
-```bash
-cp nba_dfs.db G:\MyDrive\nba_dfs\
-```
+Database automatically synced by Step 2.
 
 ### Step 4: Upload Notebook to Colab
 
@@ -103,12 +87,14 @@ cp nba_dfs.db G:\MyDrive\nba_dfs\
 
 ### Step 5: Run Backtest
 
-1. **Mount Drive**: Run cell 1 to mount Google Drive
-2. **Install dependencies**: Run cell 2 (takes 1-2 minutes)
-3. **Verify data**: Run cell 4 to check data files
-4. **Configure parameters**: Edit cell 6 with your date ranges
-5. **Run backtest**: Run cell 9 (main execution)
-6. **View results**: Run cells 10-12 for summaries and visualizations
+1. **Mount Drive**: Run cell 1 (authorizes Drive access)
+2. **Install dependencies**: Run cell 2 (1-2 minutes)
+3. **Clone from GitHub**: Run cell 3 (auto-clones latest code)
+4. **Verify data**: Run cell 4 (checks data files on Drive)
+5. **Check resources**: Run cell 5 (shows CPU/RAM)
+6. **Configure parameters**: Edit cell 6 (date ranges, model params)
+7. **Run backtest**: Run cell 9 (main execution)
+8. **View results**: Run cells 10-12 (summaries and visualizations)
 
 ## Configuration
 
@@ -182,10 +168,32 @@ RECALIBRATE_DAYS = 3  # More frequent model updates
 
 ### Sync Updates Incrementally
 
-Only sync new data files:
+After collecting new games locally, sync new data:
 
 ```bash
-python scripts/sync_to_gdrive.py --gdrive-dir G:\MyDrive --data-only
+python scripts/sync_to_gdrive.py --gdrive-dir G:\MyDrive
+```
+
+Script automatically skips unchanged files (checks modification time).
+
+**Skip database sync (data only):**
+```bash
+python scripts/sync_to_gdrive.py --gdrive-dir G:\MyDrive --no-db
+```
+
+### Update Code
+
+Code comes from GitHub, so updates are automatic:
+
+```python
+# In Colab cell 3, code pulls latest from GitHub on each run
+# No manual sync needed
+```
+
+To use a different branch:
+```python
+# Edit cell 3
+!git clone -b your-branch https://github.com/anthonysuherli/delapan-fantasy.git
 ```
 
 ### Check Data Size
@@ -228,9 +236,21 @@ drive.mount('/content/drive', force_remount=True)
 
 ### Issue: "Module not found"
 
-**Solution:** Reinstall dependencies:
+Code should be cloned from GitHub automatically. If still failing:
+
 ```python
-!pip install --force-reinstall xgboost pandas numpy scikit-learn pyarrow
+# In cell 3, force re-clone
+!rm -rf /content/delapan-fantasy
+!git clone https://github.com/anthonysuherli/delapan-fantasy.git
+```
+
+### Issue: "Git clone failed"
+
+**Solution:** Use zip download fallback (already in cell 3):
+```python
+!wget https://github.com/anthonysuherli/delapan-fantasy/archive/refs/heads/main.zip
+!unzip -q main.zip
+!mv delapan-fantasy-main /content/delapan-fantasy
 ```
 
 ### Issue: "Session timeout"
@@ -274,14 +294,15 @@ If showing 2 cores on free tier, consider upgrading to Colab Pro.
 
 ### Issue: "Database locked"
 
-SQLite has issues with Drive sync. Copy database to local Colab storage:
+SQLite has concurrency issues on Drive's FUSE filesystem. Copy to local Colab storage:
 
 ```python
+# Add to cell 6 before configuration
 !cp /content/drive/MyDrive/nba_dfs/nba_dfs.db /content/nba_dfs.db
-
-# Update DB_PATH in cell 6
-DB_PATH = '/content/nba_dfs.db'
+DB_PATH = '/content/nba_dfs.db'  # Use local copy
 ```
+
+This gives 10-20x faster database operations.
 
 ## Advanced Usage
 
@@ -408,9 +429,20 @@ os.kill(os.getpid(), 9)
 from google.colab import drive
 drive.mount('/content/drive')
 
+# Clone from GitHub
+!git clone https://github.com/anthonysuherli/delapan-fantasy.git
+
+# Update code from GitHub
+%cd /content/delapan-fantasy
+!git pull
+%cd /content
+
 # Check resources
 import psutil
 print(f"Cores: {psutil.cpu_count()}, RAM: {psutil.virtual_memory().total / 1e9:.1f} GB")
+
+# Check data location
+!ls /content/drive/MyDrive/nba_dfs/data/inputs
 
 # Download results
 from google.colab import files
