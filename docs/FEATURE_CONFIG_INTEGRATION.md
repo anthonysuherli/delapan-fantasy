@@ -2,6 +2,40 @@
 
 YAML-based feature configuration system for reproducible feature engineering.
 
+## Feature Pipeline Architecture
+
+```mermaid
+graph TD
+    subgraph "YAML Configuration"
+        A[default_features.yaml] --> B[21 Statistics]
+        B --> C[Rolling Windows: 3,5,10]
+        B --> D[EWMA Span: 5]
+    end
+
+    subgraph "Feature Pipeline"
+        C --> E[RollingStatsTransformer]
+        D --> F[EWMATransformer]
+        E --> G[Mean Features]
+        E --> H[Std Features]
+        F --> I[EWMA Features]
+    end
+
+    subgraph "Generated Features"
+        G --> J[pts_ma3, pts_ma5, pts_ma10]
+        H --> K[pts_std3, pts_std5, pts_std10]
+        I --> L[pts_ewma5]
+        J --> M[147 Total Features]
+        K --> M
+        L --> M
+    end
+
+    subgraph "Usage"
+        M --> N[Model Training]
+        M --> O[Backtesting]
+        M --> P[Hyperparameter Tuning]
+    end
+```
+
 ## Overview
 
 Feature configurations are centralized in YAML files (config/features/) instead of hardcoded in notebooks. Benefits:
@@ -254,15 +288,19 @@ pipeline = feature_config.build_pipeline(FeaturePipeline)
 - notebooks/backtest_1d_by_player.ipynb: Uses load_feature_config()
 - notebooks/backtest_1d_by_slate.ipynb: Uses load_feature_config()
 - notebooks/backtest_season.ipynb: Uses load_feature_config()
+- notebooks/benchmark_comparison.ipynb: Uses load_feature_config()
 - scripts/optimize_xgboost_hyperparameters.py: Accepts --feature-config argument
+- src/walk_forward_backtest.py: Loads feature config in __init__, saves config name with models
 
 ## Current Status
 
-All notebooks and scripts use configuration-driven features. Hardcoded feature lists removed.
+All notebooks and scripts use configuration-driven features. Hardcoded feature lists removed. WalkForwardBacktest framework integrated with feature configs.
 
 Performance benchmarks track feature config used:
 - 2025-02-05 backtest: default_features.yaml (21 stats, 147 features)
 - Elite players: 32.9% MAPE with default config
+- Walk-forward backtesting: Feature config saved with model metadata
+- Model recalibration: Uses same feature config throughout backtest
 
 ## Future Enhancements
 

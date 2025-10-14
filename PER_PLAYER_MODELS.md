@@ -41,17 +41,23 @@ Each player gets two files:
    - Player ID
    - Number of training samples
    - Model type
-   - Window sizes used
-   - Lookback days
+   - Feature config used
 
 2. **`.json` file** (Metadata):
    - Player name
    - Player ID
    - Number of training samples
    - Model type
-   - Window sizes
-   - Lookback days
+   - Feature config used
    - Model filename
+
+### Training Inputs
+
+Training inputs saved alongside models for reproducibility:
+- Location: data/models/training_inputs/per_player/
+- Filename: {player_name}_{player_id}_inputs.parquet
+- Contains: X_train, y_train used for model training
+- Allows exact reproduction of model training
 
 ## Usage
 
@@ -164,13 +170,69 @@ Single-day backtest (2025-02-05):
 
 Elite tier performance near production target. Low-output players require different approach (classification vs regression, contextual features).
 
+## Walk-Forward Backtesting
+
+### WalkForwardBacktest Framework
+
+Automated walk-forward backtesting framework in src/walk_forward_backtest.py:
+
+```python
+from src.walk_forward_backtest import WalkForwardBacktest
+
+backtest = WalkForwardBacktest(
+    db_path='nba_dfs.db',
+    train_start='20241001',
+    train_end='20241130',
+    test_start='20241201',
+    test_end='20241215',
+    per_player_models=True,
+    model_type='xgboost',
+    feature_config='default_features',
+    recalibrate_days=7,
+    save_models=True,
+    save_predictions=True
+)
+
+results = backtest.run()
+```
+
+Features:
+- Automated model recalibration every N days
+- Per-player or per-slate model support
+- Benchmark comparison with SeasonAverageBenchmark
+- Statistical significance testing (paired t-test, Cohen's d)
+- Salary tier performance analysis
+- Model and prediction persistence
+- Training inputs saved for reproducibility
+
+### Model Recalibration
+
+Models are retrained periodically (default: 7 days) to capture recent trends:
+- First slate: Train models from scratch
+- Days 1-6: Reuse cached models for speed
+- Day 7: Recalibrate with updated training window
+- Continue pattern throughout test period
+
+Benefits:
+- Faster backtesting (models reused between recalibrations)
+- Adaptive to recent performance trends
+- Balances computational cost vs model freshness
+
+### Benchmark Comparison
+
+SeasonAverageBenchmark provides baseline for model performance:
+- Predicts player fantasy points using season average
+- Requires minimum games threshold (default: 5)
+- Statistical comparison with paired t-test
+- Effect size calculation with Cohen's d
+- Salary tier breakdown
+
 ## Current Notebooks
 
 1. backtest_1d_by_player.ipynb: Single-day per-player backtest with full analysis
 2. backtest_1d_by_slate.ipynb: Slate-level baseline for comparison
-3. backtest_season.ipynb: Season-long walk-forward validation
-
-See notebooks/performance_report_20250205.md for detailed analysis.
+3. backtest_season.ipynb: Season-long walk-forward validation using WalkForwardBacktest
+4. benchmark_comparison.ipynb: Model vs benchmark comparative analysis with statistical testing
 
 ## Model File Size
 
@@ -185,6 +247,8 @@ See notebooks/performance_report_20250205.md for detailed analysis.
 - **Memory**: Moderate (models trained one at a time)
 - **Storage**: 5-50 MB per day (500 players x 50-500 KB per model)
 - **Prediction time**: Fast (one forward pass per player)
+- **Recalibration**: 7-day default balances model freshness vs computational cost
+- **Caching**: Models reused between recalibrations for faster backtesting
 
 ## Known Issues and Roadmap
 
