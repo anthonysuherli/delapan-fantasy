@@ -153,7 +153,8 @@ class WalkForwardBacktest:
         save_models: bool = True,
         save_predictions: bool = True,
         n_jobs: int = 1,
-        rewrite_models: bool = False
+        rewrite_models: bool = False,
+        resume_from_run: Optional[str] = None
     ):
         self.train_start = train_start
         self.train_end = train_end
@@ -173,6 +174,7 @@ class WalkForwardBacktest:
         self.save_predictions = save_predictions
         self.n_jobs = n_jobs
         self.rewrite_models = rewrite_models
+        self.resume_from_run = resume_from_run
 
         if data_dir:
             data_path = Path(data_dir)
@@ -373,15 +375,33 @@ class WalkForwardBacktest:
 
         backtest_start_time = time.perf_counter()
 
-        self.run_timestamp = dt.now().strftime('%Y%m%d_%H%M%S')
-        self.run_output_dir = Path('data') / 'outputs' / self.run_timestamp
+        if self.resume_from_run:
+            self.run_timestamp = self.resume_from_run
+            logger.info(f"RESUMING existing run: {self.run_timestamp}")
+        else:
+            self.run_timestamp = dt.now().strftime('%Y%m%d_%H%M%S')
+            logger.info(f"Starting NEW run: {self.run_timestamp}")
+
+        if self.data_dir:
+            data_path = Path(self.data_dir)
+            output_path_obj = Path(self.output_dir)
+            if not output_path_obj.is_absolute():
+                base_output = data_path / self.output_dir
+            else:
+                base_output = Path(self.output_dir)
+            self.run_output_dir = base_output / self.run_timestamp
+        else:
+            self.run_output_dir = Path('data') / 'outputs' / self.run_timestamp
+
         self.run_inputs_dir = self.run_output_dir / 'inputs'
         self.run_features_dir = self.run_output_dir / 'features'
         self.run_predictions_dir = self.run_output_dir / 'predictions'
+        self.run_checkpoint_dir = self.run_output_dir / 'checkpoints'
 
         self.run_inputs_dir.mkdir(parents=True, exist_ok=True)
         self.run_features_dir.mkdir(parents=True, exist_ok=True)
         self.run_predictions_dir.mkdir(parents=True, exist_ok=True)
+        self.run_checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
         logger.info("="*80)
         logger.info("STARTING WALK-FORWARD BACKTEST")
@@ -392,6 +412,12 @@ class WalkForwardBacktest:
         logger.info(f"Testing period: {self.test_start} to {self.test_end}")
         logger.info(f"Model: {self.model_type}")
         logger.info("="*80)
+
+        completed_slates = self._load_checkpoint()
+        if completed_slates:
+            logger.info(f"RESUMING from checkpoint: {len(completed_slates)} slates already completed")
+            logger.info(f"Completed dates: {sorted(completed_slates)}")
+            logger.info("="*80)
 
         slate_dates = self.loader.load_slate_dates(self.test_start, self.test_end)
 
@@ -450,6 +476,15 @@ class WalkForwardBacktest:
 
         slate_times = []
         for i, test_date in enumerate(tqdm(slate_dates, desc="Backtesting slates")):
+            if test_date in completed_slates:
+                logger.info(f"Skipping slate {i+1}/{len(slate_dates)}: {test_date} (already completed)")
+                slate_result = self._load_slate_checkpoint(test_date)
+                if slate_result:
+                    self.results.append(slate_result['daily_result'])
+                    merged_df = pd.read_parquet(self.run_predictions_dir / f"{test_date}_with_actuals.parquet")
+                    self.all_predictions.append(merged_df)
+                continue
+
             slate_start_time = time.perf_counter()
             logger.info('')
             logger.info(f"Processing slate {i+1}/{len(slate_dates)}: {test_date}")
@@ -580,6 +615,9 @@ class WalkForwardBacktest:
 
             self.results.append(daily_results)
             self.all_predictions.append(merged_df)
+
+            self._save_slate_checkpoint(test_date, daily_results, merged_df)
+            logger.info(f"Checkpoint saved for {test_date}")
 
             slate_elapsed = time.perf_counter() - slate_start_time
             slate_times.append(slate_elapsed)
@@ -1012,6 +1050,79 @@ class WalkForwardBacktest:
             mins = int((seconds % 3600) // 60)
             secs = seconds % 60
             return f"{hours}h {mins}m {secs:.0f}s"
+
+    def _save_slate_checkpoint(self, test_date: str, daily_results: Dict[str, Any], merged_df: pd.DataFrame):
+        """Save checkpoint after each slate completion."""
+        import json
+
+        checkpoint_file = self.run_checkpoint_dir / f"{test_date}.json"
+        checkpoint_data = {
+            'test_date': test_date,
+            'completed_at': pd.Timestamp.now().isoformat(),
+            'daily_result': daily_results,
+            'num_players': daily_results.get('num_players', 0),
+            'model_mape': daily_results.get('model_mape', None),
+            'benchmark_mape': daily_results.get('benchmark_mape', None)
+        }
+
+        with open(checkpoint_file, 'w') as f:
+            json.dump(checkpoint_data, f, indent=2, default=str)
+
+        progress_file = self.run_checkpoint_dir / 'progress.json'
+        if progress_file.exists():
+            with open(progress_file, 'r') as f:
+                progress = json.load(f)
+        else:
+            progress = {
+                'run_timestamp': self.run_timestamp,
+                'test_start': self.test_start,
+                'test_end': self.test_end,
+                'completed_slates': [],
+                'last_updated': None
+            }
+
+        if test_date not in progress['completed_slates']:
+            progress['completed_slates'].append(test_date)
+        progress['last_updated'] = pd.Timestamp.now().isoformat()
+        progress['total_completed'] = len(progress['completed_slates'])
+
+        with open(progress_file, 'w') as f:
+            json.dump(progress, f, indent=2, default=str)
+
+        logger.debug(f"Saved checkpoint: {checkpoint_file}")
+
+    def _load_checkpoint(self) -> set:
+        """Load completed slate dates from checkpoint directory."""
+        import json
+
+        if not self.run_checkpoint_dir.exists():
+            return set()
+
+        completed_slates = set()
+        for checkpoint_file in self.run_checkpoint_dir.glob('*.json'):
+            try:
+                with open(checkpoint_file, 'r') as f:
+                    checkpoint_data = json.load(f)
+                    completed_slates.add(checkpoint_data['test_date'])
+            except Exception as e:
+                logger.warning(f"Failed to load checkpoint {checkpoint_file}: {str(e)}")
+
+        return completed_slates
+
+    def _load_slate_checkpoint(self, test_date: str) -> Optional[Dict[str, Any]]:
+        """Load checkpoint data for a specific slate."""
+        import json
+
+        checkpoint_file = self.run_checkpoint_dir / f"{test_date}.json"
+        if not checkpoint_file.exists():
+            return None
+
+        try:
+            with open(checkpoint_file, 'r') as f:
+                return json.load(f)
+        except Exception as e:
+            logger.warning(f"Failed to load checkpoint for {test_date}: {str(e)}")
+            return None
 
     def _aggregate_results(self) -> Dict[str, Any]:
         logger.info("Aggregating backtest results")
