@@ -113,6 +113,25 @@ HistoricalDataLoader (src/data/loaders/historical_loader.py):
 - load_slate_dates(start_date, end_date): Get dates with games in range
 - Prevents lookahead bias in training data
 
+OptimizedHistoricalDataLoader (src/data/loaders/optimized_historical_loader.py):
+- Drop-in replacement for HistoricalDataLoader with 2-5x speedup
+- Parallel file reading with TensorFlow or PyTorch backends
+- Automatic backend selection (loader_type='auto')
+- Prefetching and caching for improved throughput
+- Identical API to HistoricalDataLoader for backward compatibility
+
+TensorFlowDataLoader (src/data/loaders/tensorflow_loader.py):
+- Parallel file reading with tf.data.Dataset.interleave
+- Prefetching with tf.data.AUTOTUNE
+- GPU-ready tensor outputs with caching
+- create_cached_dataset(): Create optimized dataset for model training
+
+PyTorchDataLoader (src/data/loaders/pytorch_loader.py):
+- Multi-worker DataLoader with ThreadPoolExecutor
+- Pin memory for faster GPU transfer
+- ParquetDataset and StreamingParquetDataset classes
+- create_dataloader(): Create DataLoader with parallel workers
+
 ### Features: src/features/
 
 FeatureTransformer base class (src/features/base.py):

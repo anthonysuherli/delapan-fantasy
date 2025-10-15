@@ -15,6 +15,7 @@ import argparse
 import sys
 import os
 import logging
+import yaml
 from pathlib import Path
 from datetime import datetime, timedelta
 
@@ -71,6 +72,12 @@ def parse_args():
         "--feature-config",
         default="default_features",
         help="Feature configuration name (default: default_features)"
+    )
+
+    parser.add_argument(
+        "--model-config",
+        default=None,
+        help="Path to YAML model configuration file with optimized hyperparameters"
     )
 
     parser.add_argument(
@@ -148,14 +155,28 @@ def parse_args():
     parser.add_argument(
         "--n-jobs",
         type=int,
-        default=1,
-        help="Number of parallel jobs for per-player model training (default: 1, use -1 for all cores)"
+        default=-1,
+        help="Number of parallel jobs for per-player model training (default: -1 for all cores, use 1 for sequential)"
     )
 
     parser.add_argument(
         "--rewrite-models",
         action="store_true",
         help="Force retraining of models even if cached versions exist"
+    )
+
+    parser.add_argument(
+        "--resume-from-run",
+        default=None,
+        help="Resume from an existing run by providing the timestamp (e.g., 20250205_143022)"
+    )
+
+    parser.add_argument(
+        "--salary-tiers",
+        nargs="+",
+        type=int,
+        default=[0, 4000, 6000, 8000, 15000],
+        help="Salary tier bins for analysis (default: 0 4000 6000 8000 15000)"
     )
 
     return parser.parse_args()
@@ -191,6 +212,8 @@ def main():
     print(f"Rewrite Models: {args.rewrite_models}")
     print(f"Save Models: {not args.no_save_models}")
     print(f"Save Predictions: {not args.no_save_predictions}")
+    print(f"Resume From Run: {args.resume_from_run if args.resume_from_run else 'None (fresh start)'}")
+    print(f"Salary Tiers: {args.salary_tiers}")
     print("="*80)
     print()
 
@@ -204,16 +227,37 @@ def main():
 
     print(f"Calculated Training Period: {train_start} to {train_end}\n")
 
-    model_params = {
-        'max_depth': args.max_depth,
-        'learning_rate': args.learning_rate,
-        'n_estimators': args.n_estimators,
-        'min_child_weight': 5,
-        'subsample': 0.8,
-        'colsample_bytree': 0.8,
-        'objective': 'reg:squarederror',
-        'random_state': 42
-    }
+    if args.model_config:
+        print(f"Loading model configuration from: {args.model_config}")
+        with open(args.model_config, 'r') as f:
+            model_config = yaml.safe_load(f)
+
+        model_params = model_config.get('hyperparameters', {})
+
+        if 'optimization_metadata' in model_config:
+            metadata = model_config['optimization_metadata']
+            print("Loaded optimized hyperparameters:")
+            print(f"  Optimized at: {metadata.get('optimized_at', 'Unknown')}")
+            print(f"  Training period: {metadata.get('train_start', 'Unknown')} to {metadata.get('train_end', 'Unknown')}")
+            print(f"  Best MAPE: {metadata.get('best_mape', 'Unknown'):.2f}%")
+            print(f"  Trials: {metadata.get('optimization_trials', 'Unknown')}")
+
+        print("\nHyperparameters:")
+        for key, value in model_params.items():
+            print(f"  {key}: {value}")
+        print()
+    else:
+        model_params = {
+            'max_depth': args.max_depth,
+            'learning_rate': args.learning_rate,
+            'n_estimators': args.n_estimators,
+            'min_child_weight': 5,
+            'subsample': 0.8,
+            'colsample_bytree': 0.8,
+            'objective': 'reg:squarederror',
+            'random_state': 42
+        }
+        print("Using default hyperparameters from command-line arguments\n")
 
     backtest = WalkForwardBacktest(
         db_path=args.db_path,
@@ -231,10 +275,12 @@ def main():
         min_games_for_benchmark=args.min_benchmark_games,
         recalibrate_days=args.recalibrate_days,
         num_seasons=args.num_seasons,
+        salary_tiers=args.salary_tiers,
         save_models=not args.no_save_models,
         save_predictions=not args.no_save_predictions,
         n_jobs=args.n_jobs,
-        rewrite_models=args.rewrite_models
+        rewrite_models=args.rewrite_models,
+        resume_from_run=args.resume_from_run
     )
 
     results = backtest.run()
