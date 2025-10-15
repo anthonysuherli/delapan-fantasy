@@ -2,6 +2,102 @@
 
 Scripts for data collection, backtesting, and hyperparameter optimization.
 
+## run_backtest_gpu.py
+
+GPU-accelerated walk-forward backtest with optimized data loading and XGBoost GPU training.
+
+### Usage
+
+```bash
+python scripts/run_backtest_gpu.py --test-start YYYYMMDD --test-end YYYYMMDD
+```
+
+### Arguments
+
+Required:
+- `--test-start`: Test start date (format: YYYYMMDD)
+- `--test-end`: Test end date (format: YYYYMMDD)
+
+Optional:
+- `--db-path`: Path to SQLite database (default: nba_dfs.db)
+- `--num-seasons`: Number of seasons for training (default: 1)
+- `--model-type`: Model type - xgboost or random_forest (default: xgboost)
+- `--model-config`: Path to model configuration YAML (default: config/models/xgboost_default.yaml)
+- `--feature-config`: Feature configuration name (default: default_features)
+- `--per-player`: Use per-player models instead of slate-level
+- `--min-player-games`: Minimum games for per-player models (default: 10)
+- `--recalibrate-days`: Recalibrate model every N days (default: 7)
+- `--n-jobs`: Number of parallel jobs for per-player training (-1 = all cores, default: -1)
+- `--num-workers`: Number of workers for data loading (default: 16)
+- `--gpu-id`: GPU device ID to use (default: 0)
+- `--output-dir`: Output directory (default: data/backtest_results)
+- `--data-dir`: Data directory for separated architecture (optional)
+- `--save-models`: Save trained models to disk (default: True)
+- `--save-predictions`: Save predictions to disk (default: True)
+- `--rewrite-models`: Force rewrite existing models
+- `--resume-from`: Resume from existing run timestamp
+
+### Examples
+
+```bash
+# GPU-accelerated single day backtest
+python scripts/run_backtest_gpu.py \
+  --test-start 20250205 --test-end 20250205 \
+  --model-config config/models/xgboost_a100.yaml \
+  --per-player --gpu-id 0
+
+# Full season GPU backtest with A100 config
+python scripts/run_backtest_gpu.py \
+  --test-start 20250201 --test-end 20250228 \
+  --model-config config/models/xgboost_a100.yaml \
+  --per-player --n-jobs -1 --num-workers 32
+
+# Resume failed GPU run
+python scripts/run_backtest_gpu.py \
+  --test-start 20250201 --test-end 20250228 \
+  --resume-from 20251015_082130
+```
+
+### GPU Configuration
+
+The script automatically applies GPU settings from your model config YAML. For XGBoost 2.0+:
+
+```yaml
+model:
+  params:
+    tree_method: "hist"
+    device: "cuda:0"
+```
+
+Old parameters (`gpu_hist`, `gpu_predictor`, `gpu_id`) are deprecated and automatically converted.
+
+### What It Does
+
+1. Loads model configuration from YAML
+2. Applies GPU settings based on --gpu-id flag
+3. Initializes WalkForwardBacktest with GPU-optimized parameters
+4. Runs backtest with per-player or slate-level models
+5. Saves results, models, and predictions
+6. Generates summary report with benchmark comparison
+
+### Performance
+
+Expected speedup on A100 GPU vs CPU:
+- Data loading: 2-5x faster with optimized loaders
+- XGBoost training: 3-10x faster per model
+- Full backtest (30 days, 500 players): 30 min vs 4 hours
+
+See [docs/GPU_TRAINING.md](../docs/GPU_TRAINING.md) for detailed GPU setup guide.
+
+### Prerequisites
+
+- NVIDIA GPU with CUDA support
+- XGBoost 2.0+ installed
+- cuDF and cuPy for GPU-accelerated predictions (optional but recommended)
+- Model configuration YAML with GPU parameters
+
+---
+
 ## run_backtest.py
 
 Run walk-forward backtest with per-player or slate-level models, including benchmark comparison, statistical testing, and salary tier analysis.

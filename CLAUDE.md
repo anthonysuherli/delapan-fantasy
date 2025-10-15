@@ -40,14 +40,20 @@ python scripts/collect_dfs_salaries.py --start-date 20241201 --end-date 20241231
 
 ### Backtesting
 ```bash
+# CPU backtest
 python scripts/run_backtest.py --test-start 20250205 --test-end 20250206
 python scripts/run_backtest.py --test-start 20250201 --test-end 20250228 --per-player
+
+# GPU-accelerated backtest
+python scripts/run_backtest_gpu.py --test-start 20250205 --test-end 20250206 \
+  --model-config config/models/xgboost_a100.yaml --per-player --gpu-id 0
 ```
 
 Requires TANK01_API_KEY in .env file. RapidAPI key from Tank01 Fantasy Stats API.
 
 See [docs/SCRIPTS_GUIDE.md](docs/SCRIPTS_GUIDE.md) for complete scripts documentation.
 See [scripts/README.md](scripts/README.md) for additional details.
+See [docs/GPU_TRAINING.md](docs/GPU_TRAINING.md) for GPU setup and configuration.
 
 ## Key Modules
 
@@ -319,6 +325,9 @@ config/models/*.yaml:
 - Model hyperparameters
 - XGBoost, Random Forest configs
 - Training parameters
+- GPU configurations (xgboost_a100.yaml for GPU training)
+
+Note: XGBoost 2.0+ uses `device: "cuda:0"` instead of deprecated `gpu_hist`/`gpu_id` parameters
 
 config/experiments/*.yaml:
 - Backtest configurations
@@ -337,6 +346,25 @@ hyperparameters:
   colsample_bytree: 0.8
   objective: reg:squarederror
   random_state: 42
+  tree_method: hist
+```
+
+GPU config (config/models/xgboost_a100.yaml):
+```yaml
+model:
+  type: xgboost
+  params:
+    max_depth: 10
+    learning_rate: 0.05
+    n_estimators: 500
+    min_child_weight: 3
+    subsample: 0.85
+    colsample_bytree: 0.85
+    objective: reg:squarederror
+    random_state: 42
+    tree_method: hist
+    device: cuda:0
+    max_bin: 512
 ```
 
 ## Testing Strategy

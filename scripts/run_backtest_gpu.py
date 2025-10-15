@@ -98,16 +98,14 @@ def main():
             model_params = config.get('model', {}).get('params', {})
 
             if args.model_type == 'xgboost':
-                model_params['gpu_id'] = args.gpu_id
-
+                if 'device' not in model_params:
+                    model_params['device'] = f'cuda:{args.gpu_id}'
                 if 'tree_method' not in model_params:
-                    model_params['tree_method'] = 'gpu_hist'
-                if 'predictor' not in model_params:
-                    model_params['predictor'] = 'gpu_predictor'
+                    model_params['tree_method'] = 'hist'
 
             logger.info(f"Loaded model parameters from {args.model_config}")
             logger.info(f"GPU configuration: tree_method={model_params.get('tree_method')}, "
-                       f"predictor={model_params.get('predictor')}, gpu_id={model_params.get('gpu_id')}")
+                       f"device={model_params.get('device')}")
         except Exception as e:
             logger.warning(f"Failed to load model config: {e}. Using defaults.")
 

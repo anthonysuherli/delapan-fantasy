@@ -17,10 +17,13 @@ Guide for running GPU-accelerated training on cloud machines.
 
 ### Python Packages
 ```bash
-pip install xgboost[gpu]
+pip install xgboost>=2.0.0
+pip install cudf-cu12 cupy-cuda12x
 pip install tensorflow-gpu
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 ```
+
+Note: cuDF and cuPy required for GPU-accelerated predictions (XGBoost model.predict with GPU DataFrames)
 
 ## Verify GPU Setup
 
@@ -52,35 +55,39 @@ print(torch.cuda.get_device_name(0))
 
 ### XGBoost GPU Parameters
 
-Updated config/models/xgboost_default.yaml:
+Updated config/models/xgboost_a100.yaml (XGBoost 2.0+):
 ```yaml
 model:
   type: "xgboost"
   params:
-    max_depth: 6
+    max_depth: 10
     learning_rate: 0.05
-    n_estimators: 200
-    min_child_weight: 5
-    subsample: 0.8
-    colsample_bytree: 0.8
+    n_estimators: 500
+    min_child_weight: 3
+    subsample: 0.85
+    colsample_bytree: 0.85
     objective: "reg:squarederror"
     random_state: 42
-    tree_method: "gpu_hist"
-    predictor: "gpu_predictor"
-    gpu_id: 0
+    tree_method: "hist"
+    device: "cuda:0"
+    max_bin: 512
 ```
 
-Key GPU parameters:
-- `tree_method: "gpu_hist"` - GPU-accelerated histogram-based tree construction
-- `predictor: "gpu_predictor"` - GPU-accelerated prediction
-- `gpu_id: 0` - GPU device ID (use 1, 2, etc. for multi-GPU setups)
+Key GPU parameters (XGBoost 2.0+):
+- `tree_method: "hist"` - Histogram-based tree construction (works on CPU/GPU)
+- `device: "cuda:0"` - GPU device specification (cuda:0, cuda:1, etc.)
+
+Deprecated parameters (do not use):
+- `tree_method: "gpu_hist"` - Deprecated since XGBoost 2.0.0
+- `predictor: "gpu_predictor"` - Deprecated, automatically inferred from device
+- `gpu_id: 0` - Deprecated, use device parameter instead
 
 ### Multi-GPU Setup
 
 For multiple GPUs, specify device per process:
 ```python
-model_params_gpu0 = {**base_params, 'gpu_id': 0}
-model_params_gpu1 = {**base_params, 'gpu_id': 1}
+model_params_gpu0 = {**base_params, 'device': 'cuda:0'}
+model_params_gpu1 = {**base_params, 'device': 'cuda:1'}
 ```
 
 ## Usage
@@ -214,16 +221,34 @@ Increase num_workers:
 
 Or use RAM disk for data directory.
 
-### Model Training Errors
-Verify XGBoost GPU build:
-```bash
-pip uninstall xgboost
-pip install xgboost --no-cache-dir
+### Device Mismatch Warnings
+If you see warnings about CPU/GPU data mismatch:
+```
+WARNING: Falling back to prediction using DMatrix due to mismatched devices
 ```
 
-For GPU support:
+Solution: Install cuDF and cuPy for GPU-accelerated predictions:
 ```bash
-pip install xgboost[gpu]
+pip install cudf-cu12 cupy-cuda12x
+```
+
+The XGBoostModel class automatically converts pandas DataFrames to cuDF when `device='cuda'`.
+
+### Model Training Errors
+Verify XGBoost version:
+```bash
+pip install xgboost>=2.0.0 --upgrade
+```
+
+Verify cuDF/cuPy installation:
+```bash
+pip list | grep cu
+```
+
+Expected output:
+```
+cudf-cu12        24.x.x
+cupy-cuda12x     13.x.x
 ```
 
 ## Cloud-Specific Configurations

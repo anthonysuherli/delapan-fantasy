@@ -261,6 +261,7 @@ D:\NBA_Data\                # Data (persistent)
 
 - **[docs/LOCAL_SEPARATED_SETUP.md](docs/LOCAL_SEPARATED_SETUP.md)** - Local separated architecture setup
 - **[docs/COLAB_SETUP.md](docs/COLAB_SETUP.md)** - Google Colab cloud training
+- **[docs/GPU_TRAINING.md](docs/GPU_TRAINING.md)** - GPU-accelerated training guide
 
 **Separated architecture benefits:**
 - Clean git repository (no large data files)
@@ -273,6 +274,7 @@ D:\NBA_Data\                # Data (persistent)
 - Google Colab Free: $0/month, 2 cores, 12GB RAM, ~21 min/slate
 - Google Colab Pro: $10/month, 4 cores, 25GB RAM, ~10.4 min/slate (recommended)
 - Google Colab Pro+: $50/month, 8 cores, 50GB RAM, ~5.2 min/slate
+- GPU instances (A100/V100): 5-10x speedup, ~3-5 min/slate for per-player models
 
 ## Quick Start
 

@@ -98,6 +98,15 @@ class XGBoostModel(BaseModel):
         """
         if not self._is_trained:
             raise ValueError("Model must be trained before prediction")
+
+        device = self.config.get('device', 'cpu')
+        if device.startswith('cuda'):
+            import cupy as cp
+            import cudf
+            X_gpu = cudf.DataFrame.from_pandas(X)
+            predictions = self.model.predict(X_gpu)
+            return cp.asnumpy(predictions) if hasattr(predictions, '__cuda_array_interface__') else predictions
+
         return self.model.predict(X)
 
     def save(self, path: str) -> None:
