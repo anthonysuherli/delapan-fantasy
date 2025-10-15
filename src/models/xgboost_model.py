@@ -25,7 +25,8 @@ class XGBoostModel(BaseModel):
             'colsample_bytree': 0.8,
             'objective': 'reg:squarederror',
             'random_state': 42,
-            'enable_categorical': True
+            'enable_categorical': True,
+            'tree_method': 'hist'
         }
         config = {**default_config, **(config or {})}
         super().__init__(config)

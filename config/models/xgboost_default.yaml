@@ -13,3 +13,6 @@ model:
     colsample_bytree: 0.8
     objective: "reg:squarederror"
     random_state: 42
+    tree_method: "gpu_hist"
+    predictor: "gpu_predictor"
+    gpu_id: 0
