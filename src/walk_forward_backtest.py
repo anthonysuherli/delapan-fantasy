@@ -13,7 +13,7 @@ from src.data.storage.sqlite_storage import SQLiteStorage
 from src.data.loaders.historical_loader import HistoricalDataLoader
 from src.models.xgboost_model import XGBoostModel
 from src.models.random_forest_model import RandomForestModel
-from src.evaluation.metrics.accuracy import MAPEMetric, RMSEMetric, MAEMetric, CorrelationMetric
+from src.evaluation.metrics.accuracy import MAPEMetric, RMSEMetric, MAEMetric, CorrelationMetric, CappedMAPEMetric, SMAPEMetric, WMAPEMetric
 from src.evaluation.benchmarks.season_average import SeasonAverageBenchmark
 from src.utils.fantasy_points import calculate_dk_fantasy_points
 from src.features.pipeline import FeaturePipeline
@@ -154,7 +154,10 @@ class WalkForwardBacktest:
         save_predictions: bool = True,
         n_jobs: int = 1,
         rewrite_models: bool = False,
-        resume_from_run: Optional[str] = None
+        resume_from_run: Optional[str] = None,
+        minutes_threshold: int = 12,
+        cmape_cap: float = 8.0,
+        wmape_weight: str = 'actual_fpts'
     ):
         self.train_start = train_start
         self.train_end = train_end
@@ -175,6 +178,9 @@ class WalkForwardBacktest:
         self.n_jobs = n_jobs
         self.rewrite_models = rewrite_models
         self.resume_from_run = resume_from_run
+        self.minutes_threshold = int(minutes_threshold)
+        self.cmape_cap = float(cmape_cap)
+        self.wmape_weight = str(wmape_weight)
 
         if data_dir:
             data_path = Path(data_dir)
@@ -203,6 +209,9 @@ class WalkForwardBacktest:
         self.rmse_metric = RMSEMetric()
         self.mae_metric = MAEMetric()
         self.corr_metric = CorrelationMetric()
+        self.cmape_metric = CappedMAPEMetric(cap=self.cmape_cap)
+        self.smape_metric = SMAPEMetric()
+        self.wmape_metric = WMAPEMetric()
 
         self.benchmark = None
 
@@ -225,6 +234,10 @@ class WalkForwardBacktest:
             'n_jobs': n_jobs,
             'rewrite_models': rewrite_models
         }
+        # Persist evaluation knobs
+        self.config['minutes_threshold'] = self.minutes_threshold
+        self.config['cmape_cap'] = self.cmape_cap
+        self.config['wmape_weight'] = self.wmape_weight
 
         Path(self.output_dir).mkdir(parents=True, exist_ok=True)
 
@@ -245,6 +258,7 @@ class WalkForwardBacktest:
         logger.info(f"Save predictions: {save_predictions}")
         logger.info(f"Parallel jobs: {n_jobs} ({'all cores' if n_jobs == -1 else 'sequential' if n_jobs == 1 else f'{n_jobs} workers'})")
         logger.info(f"Using YAML-configured feature pipeline")
+        logger.info(f"Metrics: minutes_threshold={self.minutes_threshold}, cmape_cap={self.cmape_cap}, wmape_weight={self.wmape_weight}")
 
     def _build_training_features(
         self,
@@ -722,7 +736,13 @@ class WalkForwardBacktest:
             if 'longName' in df.columns and 'playerName' not in df.columns:
                 df['playerName'] = df['longName']
 
-            return df[['playerID', 'playerName', 'team', 'pos', 'actual_fpts']]
+            # Include actual minutes if available for filtering/weighting
+            if 'mins' in df.columns:
+                df['actual_mins'] = pd.to_numeric(df['mins'], errors='coerce')
+            else:
+                df['actual_mins'] = np.nan
+
+            return df[['playerID', 'playerName', 'team', 'pos', 'actual_fpts', 'actual_mins']]
 
         except Exception as e:
             logger.error(f"Failed to load actuals for {date}: {str(e)}")
@@ -742,6 +762,9 @@ class WalkForwardBacktest:
             on='playerID',
             how='inner'
         )
+        # Merge minutes if present
+        if 'actual_mins' in actuals.columns and 'actual_mins' not in merged.columns:
+            merged = merged.merge(actuals[['playerID', 'actual_mins']], on='playerID', how='left')
         logger.debug(f"Matched {len(merged)}/{len(projections)} players with actuals")
 
         if merged.empty:
@@ -768,6 +791,20 @@ class WalkForwardBacktest:
         model_rmse = self.rmse_metric.calculate(y_true, y_pred)
         model_mae = self.mae_metric.calculate(y_true, y_pred)
         model_corr = self.corr_metric.calculate(y_true, y_pred)
+        model_cmape = self.cmape_metric.calculate(y_true, y_pred)
+        model_smape = self.smape_metric.calculate(y_true, y_pred)
+        # Build weights for WMAPE
+        weights_series = None
+        if self.wmape_weight == 'actual_fpts':
+            weights_series = merged['actual_fpts'].clip(lower=1.0)
+        elif self.wmape_weight == 'actual_mins' and 'actual_mins' in merged.columns:
+            weights_series = merged['actual_mins'].fillna(0).clip(lower=1.0)
+        elif self.wmape_weight == 'expected_mins' and 'expected_mins' in merged.columns:
+            weights_series = merged['expected_mins'].fillna(0).clip(lower=1.0)
+        else:
+            # Fallback
+            weights_series = merged['actual_fpts'].clip(lower=1.0)
+        model_wmape = self.wmape_metric.calculate(y_true, y_pred, weights_series.values)
 
         logger.debug("Calculating benchmark metrics...")
         has_benchmark = (merged['benchmark_pred'] > 0)
@@ -781,6 +818,17 @@ class WalkForwardBacktest:
             merged[has_benchmark]['benchmark_pred']
         ) if has_benchmark.any() else np.nan
 
+        benchmark_cmape = self.cmape_metric.calculate(
+            merged[has_benchmark]['actual_fpts'],
+            merged[has_benchmark]['benchmark_pred']
+        ) if has_benchmark.any() else np.nan
+
+        benchmark_wmape = self.wmape_metric.calculate(
+            merged[has_benchmark]['actual_fpts'],
+            merged[has_benchmark]['benchmark_pred'],
+            (weights_series[has_benchmark]).values if has_benchmark.any() else None
+        ) if has_benchmark.any() else np.nan
+
         logger.debug(f"Creating salary tiers (bins: {self.salary_tiers})...")
         merged['salary'] = merged['salary'].astype(int)
         merged['salary_bin'] = pd.cut(
@@ -789,6 +837,25 @@ class WalkForwardBacktest:
             labels=['Low', 'Mid', 'High', 'Elite'][:len(self.salary_tiers)-1]
         )
 
+        # Minutes-based filtering (use expected_mins if present, else actual_mins)
+        minute_col = 'expected_mins' if 'expected_mins' in merged.columns else 'actual_mins' if 'actual_mins' in merged.columns else None
+        if minute_col is not None:
+            filt_mask = merged[minute_col].fillna(0) >= self.minutes_threshold
+        else:
+            filt_mask = pd.Series([True] * len(merged))
+
+        if filt_mask.any():
+            y_true_f = merged.loc[filt_mask, 'actual_fpts'].values
+            y_pred_f = merged.loc[filt_mask, 'projected_fpts'].values
+            weights_f = (weights_series[filt_mask]).values if len(weights_series) == len(merged) else None
+            model_cmape_f = self.cmape_metric.calculate(y_true_f, y_pred_f)
+            model_smape_f = self.smape_metric.calculate(y_true_f, y_pred_f)
+            model_wmape_f = self.wmape_metric.calculate(y_true_f, y_pred_f, weights_f)
+        else:
+            model_cmape_f = np.nan
+            model_smape_f = np.nan
+            model_wmape_f = np.nan
+
         result = {
             'date': test_date,
             'num_players': len(merged),
@@ -796,11 +863,24 @@ class WalkForwardBacktest:
             'model_rmse': model_rmse,
             'model_mae': model_mae,
             'model_corr': model_corr,
+            'model_cmape': model_cmape,
+            'model_smape': model_smape,
+            'model_wmape': model_wmape,
+            'model_cmape_filtered': model_cmape_f,
+            'model_smape_filtered': model_smape_f,
+            'model_wmape_filtered': model_wmape_f,
             'benchmark_mape': benchmark_mape,
             'benchmark_rmse': benchmark_rmse,
+            'benchmark_cmape': benchmark_cmape,
+            'benchmark_wmape': benchmark_wmape,
             'mean_projected': merged['projected_fpts'].mean(),
             'mean_actual': merged['actual_fpts'].mean(),
-            'mean_benchmark': merged['benchmark_pred'].mean()
+            'mean_benchmark': merged['benchmark_pred'].mean(),
+            'minutes_threshold': self.minutes_threshold,
+            'wmape_weight': self.wmape_weight,
+            'cmape_cap': self.cmape_cap,
+            'num_players_filtered': int(filt_mask.sum()),
+            'num_low_minutes': int((~filt_mask).sum())
         }
 
         logger.debug(f"Evaluation complete: MAPE={model_mape:.2f}%, RMSE={model_rmse:.2f}, MAE={model_mae:.2f}, Corr={model_corr:.3f}")
@@ -1146,6 +1226,10 @@ class WalkForwardBacktest:
         logger.info("")
         logger.info("Model Performance:")
         logger.info(f"  Mean MAPE: {daily_df['model_mape'].mean():.2f}%")
+        if 'model_cmape' in daily_df.columns:
+            logger.info(f"  Mean cMAPE: {daily_df['model_cmape'].mean():.2f}%")
+        if 'model_wmape' in daily_df.columns:
+            logger.info(f"  Mean WMAPE: {daily_df['model_wmape'].mean():.2f}%")
         logger.info(f"  Median MAPE: {daily_df['model_mape'].median():.2f}%")
         logger.info(f"  Std MAPE: {daily_df['model_mape'].std():.2f}%")
         logger.info(f"  Mean RMSE: {daily_df['model_rmse'].mean():.2f}")
@@ -1255,12 +1339,42 @@ class WalkForwardBacktest:
             logger.info(f"  Model Std: {model_errors.std():.2f}")
             logger.info(f"  Benchmark Std: {benchmark_errors.std():.2f}")
 
+        # Low-min cohort summary
+        low_minutes_metrics = None
+        if 'num_low_minutes' in daily_df.columns and daily_df['num_low_minutes'].sum() > 0:
+            # Build across-all-slates combined merged predictions
+            all_preds = pd.concat(self.all_predictions, ignore_index=True) if self.all_predictions else pd.DataFrame()
+            if not all_preds.empty:
+                minute_col = 'expected_mins' if 'expected_mins' in all_preds.columns else 'actual_mins' if 'actual_mins' in all_preds.columns else None
+                if minute_col is not None:
+                    mask_lm = all_preds[minute_col].fillna(0) < self.minutes_threshold
+                    if mask_lm.any():
+                        y_true_lm = all_preds.loc[mask_lm, 'actual_fpts'].values
+                        y_pred_lm = all_preds.loc[mask_lm, 'projected_fpts'].values
+                        weights_lm = None
+                        if self.wmape_weight == 'actual_fpts':
+                            weights_lm = np.maximum(all_preds.loc[mask_lm, 'actual_fpts'].values, 1.0)
+                        elif self.wmape_weight == 'actual_mins' and 'actual_mins' in all_preds.columns:
+                            weights_lm = np.maximum(all_preds.loc[mask_lm, 'actual_mins'].fillna(0).values, 1.0)
+                        elif self.wmape_weight == 'expected_mins' and 'expected_mins' in all_preds.columns:
+                            weights_lm = np.maximum(all_preds.loc[mask_lm, 'expected_mins'].fillna(0).values, 1.0)
+
+                        low_minutes_metrics = {
+                            'count': int(mask_lm.sum()),
+                            'cmape': self.cmape_metric.calculate(y_true_lm, y_pred_lm),
+                            'smape': self.smape_metric.calculate(y_true_lm, y_pred_lm),
+                            'wmape': self.wmape_metric.calculate(y_true_lm, y_pred_lm, weights_lm) if weights_lm is not None else np.nan
+                        }
+
         summary = {
             'num_slates': len(daily_df),
             'date_range': f"{daily_df['date'].min()} to {daily_df['date'].max()}",
             'model_mean_mape': daily_df['model_mape'].mean(),
             'model_median_mape': daily_df['model_mape'].median(),
             'model_std_mape': daily_df['model_mape'].std(),
+            'model_mean_cmape': daily_df['model_cmape'].mean() if 'model_cmape' in daily_df.columns else np.nan,
+            'model_mean_smape': daily_df['model_smape'].mean() if 'model_smape' in daily_df.columns else np.nan,
+            'model_mean_wmape': daily_df['model_wmape'].mean() if 'model_wmape' in daily_df.columns else np.nan,
             'model_mean_rmse': daily_df['model_rmse'].mean(),
             'model_std_rmse': daily_df['model_rmse'].std(),
             'model_mean_mae': daily_df['model_mae'].mean(),
@@ -1268,12 +1382,17 @@ class WalkForwardBacktest:
             'model_std_correlation': daily_df['model_corr'].std(),
             'benchmark_mean_mape': daily_df['benchmark_mape'].mean(),
             'benchmark_median_mape': daily_df['benchmark_mape'].median(),
+            'benchmark_mean_cmape': daily_df['benchmark_cmape'].mean() if 'benchmark_cmape' in daily_df.columns else np.nan,
+            'benchmark_mean_wmape': daily_df['benchmark_wmape'].mean() if 'benchmark_wmape' in daily_df.columns else np.nan,
             'mape_improvement': mape_improvement,
             'total_players_evaluated': daily_df['num_players'].sum(),
             'avg_players_per_slate': daily_df['num_players'].mean(),
             'daily_results': daily_df,
             'all_predictions': all_predictions_df
         }
+
+        if low_minutes_metrics is not None:
+            summary['low_minutes_metrics'] = low_minutes_metrics
 
         if not comparison_df.empty and self.benchmark is not None:
             summary['benchmark_comparison'] = comparison_results

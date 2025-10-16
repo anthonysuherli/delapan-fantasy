@@ -66,7 +66,7 @@ class MetricRegistry:
 
 registry = MetricRegistry()
 
-from .accuracy import MAPEMetric, RMSEMetric, MAEMetric, CorrelationMetric
+from .accuracy import MAPEMetric, RMSEMetric, MAEMetric, CorrelationMetric, CappedMAPEMetric, SMAPEMetric, WMAPEMetric
 
 try: 
     registry.register('mape', MAPEMetric)
@@ -83,4 +83,16 @@ except:
 try: 
     registry.register('correlation', CorrelationMetric)
 except: 
+    pass
+try:
+    registry.register('cmape', CappedMAPEMetric)
+except:
+    pass
+try:
+    registry.register('smape', SMAPEMetric)
+except:
+    pass
+try:
+    registry.register('wmape', WMAPEMetric)
+except:
     pass

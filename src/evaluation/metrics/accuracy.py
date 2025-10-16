@@ -140,3 +140,77 @@ class CorrelationMetric(BaseMetric):
             raise ValueError(f"Array length mismatch: {len(y_true)} vs {len(y_pred)}")
 
         return np.corrcoef(y_true, y_pred)[0, 1]
+
+
+class CappedMAPEMetric(BaseMetric):
+    """Capped Mean Absolute Percentage Error (cMAPE)
+
+    Uses denominator = max(actual, cap) to avoid inflation when actuals are near zero.
+    Returns percentage.
+    """
+
+    def __init__(self, cap: float = 8.0, remove_outliers: bool = False, outlier_method: str = 'iqr', outlier_threshold: float = 1.5):
+        super().__init__('cmape', remove_outliers, outlier_method, outlier_threshold)
+        self.cap = float(cap)
+
+    def calculate(self, y_true: np.ndarray, y_pred: np.ndarray) -> float:
+        if len(y_true) != len(y_pred):
+            raise ValueError(f"Array length mismatch: {len(y_true)} vs {len(y_pred)}")
+
+        if len(y_true) == 0:
+            return np.nan
+
+        denom = np.maximum(np.asarray(y_true, dtype=float), self.cap)
+        abs_err = np.abs(np.asarray(y_pred, dtype=float) - np.asarray(y_true, dtype=float))
+        return float(np.mean(abs_err / denom) * 100.0)
+
+
+class SMAPEMetric(BaseMetric):
+    """Symmetric Mean Absolute Percentage Error (SMAPE)
+
+    2*|pred-true|/(|pred|+|true|+eps). Returns percentage.
+    """
+
+    def __init__(self, eps: float = 1.0, remove_outliers: bool = False, outlier_method: str = 'iqr', outlier_threshold: float = 1.5):
+        super().__init__('smape', remove_outliers, outlier_method, outlier_threshold)
+        self.eps = float(eps)
+
+    def calculate(self, y_true: np.ndarray, y_pred: np.ndarray) -> float:
+        if len(y_true) != len(y_pred):
+            raise ValueError(f"Array length mismatch: {len(y_true)} vs {len(y_pred)}")
+
+        y_true = np.asarray(y_true, dtype=float)
+        y_pred = np.asarray(y_pred, dtype=float)
+        num = np.abs(y_pred - y_true)
+        denom = np.maximum(np.abs(y_pred) + np.abs(y_true), self.eps)
+        return float(np.mean(2.0 * num / denom) * 100.0)
+
+
+class WMAPEMetric(BaseMetric):
+    """Weighted Mean Absolute Percentage Error (WMAPE)
+
+    sum(weights * |pred-true|) / sum(weights). Returns percentage.
+    Default weights are max(actual, 1.0) (i.e., weight by actual fpts).
+    """
+
+    def __init__(self, remove_outliers: bool = False, outlier_method: str = 'iqr', outlier_threshold: float = 1.5):
+        super().__init__('wmape', remove_outliers, outlier_method, outlier_threshold)
+
+    def calculate(self, y_true: np.ndarray, y_pred: np.ndarray, weights: np.ndarray = None) -> float:
+        if len(y_true) != len(y_pred):
+            raise ValueError(f"Array length mismatch: {len(y_true)} vs {len(y_pred)}")
+
+        y_true = np.asarray(y_true, dtype=float)
+        y_pred = np.asarray(y_pred, dtype=float)
+        abs_err = np.abs(y_pred - y_true)
+
+        if weights is None:
+            weights = np.maximum(y_true, 1.0)
+        else:
+            weights = np.asarray(weights, dtype=float)
+
+        total_weight = np.sum(weights)
+        if total_weight <= 0:
+            return np.nan
+
+        return float(np.sum(weights * abs_err) / total_weight * 100.0)

@@ -10,6 +10,7 @@ from src.evaluation.metrics import (
     RMSECalculator,
     CorrelationCalculator
 )
+from src.evaluation.metrics.accuracy import CappedMAPEMetric, SMAPEMetric, WMAPEMetric
 
 
 class TestMAPE:
@@ -154,3 +155,37 @@ class TestEvaluatePredictions:
         assert np.isnan(results['mape'])
         assert np.isnan(results['rmse'])
         assert np.isnan(results['correlation'])
+
+class TestNewMetrics:
+
+    def test_cmape_basic(self):
+        cmape = CappedMAPEMetric(cap=8.0)
+        y_true = np.array([0.5, 2.0, 10.0])
+        y_pred = np.array([1.0, 3.0, 12.0])
+        # Denominators: max(0.5,8)=8, max(2,8)=8, max(10,8)=10
+        # Abs errors: 0.5, 1.0, 2.0 => ratios: 0.0625, 0.125, 0.2 => mean ~ 0.1292 * 100
+        val = cmape.calculate(y_true, y_pred)
+        assert 12.0 < val < 14.0
+
+    def test_smape_basic(self):
+        smape = SMAPEMetric(eps=1.0)
+        y_true = np.array([0.0, 10.0, 20.0])
+        y_pred = np.array([0.0, 12.0, 18.0])
+        val = smape.calculate(y_true, y_pred)
+        assert val >= 0.0
+
+    def test_wmape_weights_default(self):
+        wmape = WMAPEMetric()
+        y_true = np.array([0.0, 10.0, 20.0])
+        y_pred = np.array([0.0, 12.0, 18.0])
+        val = wmape.calculate(y_true, y_pred)
+        assert val >= 0.0
+
+    def test_wmape_custom_weights(self):
+        wmape = WMAPEMetric()
+        y_true = np.array([10.0, 20.0])
+        y_pred = np.array([12.0, 18.0])
+        weights = np.array([1.0, 3.0])
+        # Weighted abs error = 1*2 + 3*2 = 8; total weight=4 => 2 => 200%
+        val = wmape.calculate(y_true, y_pred, weights)
+        assert 190.0 < val < 210.0

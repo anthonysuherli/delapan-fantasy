@@ -179,6 +179,27 @@ def parse_args():
         help="Salary tier bins for analysis (default: 0 4000 6000 8000 15000)"
     )
 
+    parser.add_argument(
+        "--minutes-threshold",
+        type=int,
+        default=12,
+        help="Minutes threshold for filtered metrics (default: 12)"
+    )
+
+    parser.add_argument(
+        "--cmape-cap",
+        type=float,
+        default=8.0,
+        help="Denominator cap for cMAPE (default: 8.0 FPTS)"
+    )
+
+    parser.add_argument(
+        "--wmape-weight",
+        choices=["actual_fpts", "actual_mins", "expected_mins"],
+        default="actual_fpts",
+        help="Weight type for WMAPE (default: actual_fpts)"
+    )
+
     return parser.parse_args()
 
 
@@ -281,6 +302,9 @@ def main():
         n_jobs=args.n_jobs,
         rewrite_models=args.rewrite_models,
         resume_from_run=args.resume_from_run
+        ,minutes_threshold=args.minutes_threshold
+        ,cmape_cap=args.cmape_cap
+        ,wmape_weight=args.wmape_weight
     )
 
     results = backtest.run()
