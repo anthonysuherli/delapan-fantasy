@@ -1,0 +1,33 @@
+pipeline:
+  name: "default_feature_pipeline"
+  description: "Default feature engineering pipeline matching notebook implementation"
+
+  transformers:
+    - name: rolling_stats
+      type: RollingStatsTransformer
+      params:
+        windows: [3, 5, 10]
+        stats: ['pts', 'reb', 'ast', 'stl', 'blk', 'mins']
+        include_std: true
+
+    - name: rolling_minmax
+      type: RollingMinMaxTransformer
+      params:
+        windows: [3, 5, 10]
+        stats: ['pts', 'reb', 'ast', 'stl', 'blk', 'mins']
+
+    - name: ewma
+      type: EWMATransformer
+      params:
+        span: 3
+        stats: ['pts', 'reb', 'ast', 'stl', 'blk', 'mins']
+
+    - name: target
+      type: TargetTransformer
+      params:
+        target_col: 'fpts'
+        shift_periods: -1
+
+output:
+  drop_columns: ['fantasyPoints', 'fantasyPts', 'created_at']
+  feature_prefix: ''

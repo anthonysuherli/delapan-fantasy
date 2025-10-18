@@ -1,15 +1,244 @@
-# Data Collection Scripts
+# Scripts
 
-Scripts for building historical NBA data datasets.
+Scripts for data collection, backtesting, and hyperparameter optimization.
 
-## build_historical_game_logs.py
+## run_backtest_gpu.py
+
+GPU-accelerated walk-forward backtest with optimized data loading and XGBoost GPU training.
+
+### Usage
+
+```bash
+python scripts/run_backtest_gpu.py --test-start YYYYMMDD --test-end YYYYMMDD
+```
+
+### Arguments
+
+Required:
+- `--test-start`: Test start date (format: YYYYMMDD)
+- `--test-end`: Test end date (format: YYYYMMDD)
+
+Optional:
+- `--db-path`: Path to SQLite database (default: nba_dfs.db)
+- `--num-seasons`: Number of seasons for training (default: 1)
+- `--model-type`: Model type - xgboost or random_forest (default: xgboost)
+- `--model-config`: Path to model configuration YAML (default: config/models/xgboost_default.yaml)
+- `--feature-config`: Feature configuration name (default: default_features)
+- `--per-player`: Use per-player models instead of slate-level
+- `--min-player-games`: Minimum games for per-player models (default: 10)
+- `--recalibrate-days`: Recalibrate model every N days (default: 7)
+- `--n-jobs`: Number of parallel jobs for per-player training (-1 = all cores, default: -1)
+- `--num-workers`: Number of workers for data loading (default: 16)
+- `--gpu-id`: GPU device ID to use (default: 0)
+- `--output-dir`: Output directory (default: data/backtest_results)
+- `--data-dir`: Data directory for separated architecture (optional)
+- `--save-models`: Save trained models to disk (default: True)
+- `--save-predictions`: Save predictions to disk (default: True)
+- `--rewrite-models`: Force rewrite existing models
+- `--resume-from`: Resume from existing run timestamp
+
+### Examples
+
+```bash
+# GPU-accelerated single day backtest
+python scripts/run_backtest_gpu.py \
+  --test-start 20250205 --test-end 20250205 \
+  --model-config config/models/xgboost_a100.yaml \
+  --per-player --gpu-id 0
+
+# Full season GPU backtest with A100 config
+python scripts/run_backtest_gpu.py \
+  --test-start 20250201 --test-end 20250228 \
+  --model-config config/models/xgboost_a100.yaml \
+  --per-player --n-jobs -1 --num-workers 32
+
+# Resume failed GPU run
+python scripts/run_backtest_gpu.py \
+  --test-start 20250201 --test-end 20250228 \
+  --resume-from 20251015_082130
+```
+
+### GPU Configuration
+
+The script automatically applies GPU settings from your model config YAML. For XGBoost 2.0+:
+
+```yaml
+model:
+  params:
+    tree_method: "hist"
+    device: "cuda:0"
+```
+
+Old parameters (`gpu_hist`, `gpu_predictor`, `gpu_id`) are deprecated and automatically converted.
+
+### What It Does
+
+1. Loads model configuration from YAML
+2. Applies GPU settings based on --gpu-id flag
+3. Initializes WalkForwardBacktest with GPU-optimized parameters
+4. Runs backtest with per-player or slate-level models
+5. Saves results, models, and predictions
+6. Generates summary report with benchmark comparison
+
+### Performance
+
+Expected speedup on A100 GPU vs CPU:
+- Data loading: 2-5x faster with optimized loaders
+- XGBoost training: 3-10x faster per model
+- Full backtest (30 days, 500 players): 30 min vs 4 hours
+
+See [docs/GPU_TRAINING.md](../docs/GPU_TRAINING.md) for detailed GPU setup guide.
+
+### Prerequisites
+
+- NVIDIA GPU with CUDA support
+- XGBoost 2.0+ installed
+- cuDF and cuPy for GPU-accelerated predictions (optional but recommended)
+- Model configuration YAML with GPU parameters
+
+---
+
+## run_backtest.py
+
+Run walk-forward backtest with per-player or slate-level models, including benchmark comparison, statistical testing, and salary tier analysis.
+
+### Usage
+
+```bash
+python scripts/run_backtest.py --test-start YYYYMMDD --test-end YYYYMMDD
+```
+
+### Arguments
+
+Required:
+- `--test-start`: Test start date (format: YYYYMMDD)
+- `--test-end`: Test end date (format: YYYYMMDD)
+
+Optional:
+- `--db-path`: Path to SQLite database (default: nba_dfs.db)
+- `--num-seasons`: Number of seasons for training (default: 1)
+- `--model-type`: Model type - xgboost, random_forest, or linear (default: xgboost)
+- `--feature-config`: Feature configuration name (default: default_features)
+- `--per-player`: Use per-player models instead of slate-level
+- `--min-player-games`: Minimum games for per-player models (default: 10)
+- `--min-benchmark-games`: Minimum games for benchmark (default: 5)
+- `--recalibrate-days`: Recalibrate model every N days (default: 7)
+- `--output-dir`: Output directory (default: data/backtest_results)
+- `--no-save-models`: Do not save trained models
+- `--no-save-predictions`: Do not save predictions to parquet
+- `--max-depth`: XGBoost max_depth (default: 6)
+- `--learning-rate`: XGBoost learning_rate (default: 0.05)
+- `--n-estimators`: XGBoost n_estimators (default: 200)
+- `--verbose`: Enable verbose logging
+
+### Examples
+
+```bash
+# Single day backtest
+python scripts/run_backtest.py --test-start 20250205 --test-end 20250205
+
+# One week with per-player models
+python scripts/run_backtest.py --test-start 20250201 --test-end 20250207 --per-player
+
+# Full month with custom features
+python scripts/run_backtest.py --test-start 20250201 --test-end 20250228 --feature-config base_features
+
+# Season backtest with model saving disabled
+python scripts/run_backtest.py --test-start 20250101 --test-end 20250228 --no-save-models
+
+# Verbose logging for debugging
+python scripts/run_backtest.py --test-start 20250205 --test-end 20250206 --verbose
+```
+
+### What It Does
+
+1. Loads historical training data based on num_seasons
+2. Builds features using YAML-configured feature pipeline
+3. Initializes season average benchmark for comparison
+4. For each test date:
+   - Trains models (per-player or slate-level)
+   - Generates predictions with benchmark comparison
+   - Saves models, predictions, and results (if enabled)
+   - Evaluates against actual results
+5. Aggregates results across all slates
+6. Performs statistical significance testing (paired t-test)
+7. Analyzes performance by salary tier
+8. Exports results to CSV and summary to TXT
+
+### Output Files
+
+All files saved to `--output-dir` (default: data/backtest_results/):
+
+**Daily Results:**
+- `backtest_results_START_to_END.csv`: Per-slate metrics
+- `summary_START_to_END.txt`: Overall summary with statistical tests
+- `tier_comparison_START_to_END.csv`: Performance by salary tier
+
+**Predictions (if save_predictions=True):**
+- `data/models/per_slate/YYYYMMDD.parquet`: Predictions for each date
+- `data/models/per_slate/YYYYMMDD_with_actuals.parquet`: Predictions with actual results
+
+**Models (if save_models=True):**
+- Per-player: `data/models/per_player/PLAYERID_NAME.pkl`
+- Slate-level: `data/models/per_slate/MODEL_DATE.pkl`
+- Metadata: Corresponding `.json` files with training info
+
+### Metrics Reported
+
+**Model Performance:**
+- MAPE (Mean Absolute Percentage Error)
+- RMSE (Root Mean Squared Error)
+- MAE (Mean Absolute Error)
+- Correlation coefficient
+
+**Benchmark Comparison:**
+- Benchmark MAPE/RMSE
+- MAPE improvement (model vs benchmark)
+- Statistical significance (p-value, t-statistic)
+- Effect size (Cohen's d)
+
+**Salary Tier Analysis:**
+- Performance breakdown by salary tier (Low/Mid/High/Elite)
+- Model vs benchmark for each tier
+
+### Training Period Calculation
+
+Training period is automatically calculated based on test dates:
+- `num_seasons=1`: Current season start to day before test start
+- `num_seasons=2`: Previous season start to day before test start
+
+Example:
+```bash
+--test-start 20250205 --num-seasons 1
+# Training: 20241001 to 20250204 (current season)
+
+--test-start 20250205 --num-seasons 2
+# Training: 20231001 to 20250204 (includes previous season)
+```
+
+### Prerequisites
+
+- SQLite database with historical data (see collect_games.py)
+- Feature configuration YAML (see config/features/)
+- Sufficient disk space for model saving (optional)
+
+### Performance Considerations
+
+- Per-player models: 500+ models per slate, slower but more accurate
+- Slate-level models: Single model, faster, good baseline
+- Model recalibration: Lower recalibrate-days = more accurate but slower
+- Prediction saving: Adds I/O overhead but enables analysis
+
+---
+
+## collect_games.py
 
 Collects historical NBA game data including schedules and box scores for a specified date range.
 
 ### Usage
 
 ```bash
-python scripts/build_historical_game_logs.py --start-date YYYYMMDD --end-date YYYYMMDD
+python scripts/collect_games.py --start-date YYYYMMDD --end-date YYYYMMDD
 ```
 
 ### Arguments
@@ -24,12 +253,13 @@ Optional:
 ### Example
 
 ```bash
-python scripts/build_historical_game_logs.py --start-date 20241201 --end-date 20241231
+python scripts/collect_games.py --start-date 20241201 --end-date 20241231
 ```
 
 ```bash
-python scripts/build_historical_game_logs.py --start-date 20241201 --end-date 20241231 -y
+python scripts/collect_games.py --start-date 20241201 --end-date 20241231 -y
 ```
+
 ### How It Works
 
 Two-phase collection process:
@@ -68,40 +298,7 @@ Box score data (per game):
 - Filename patterns:
   - schedule_YYYYMMDD.parquet
   - box_scores_GAMEID.parquet
-- Load via CSVStorage.load_data(data_type, start_date, end_date)
-
-### Example Output
-
-```
-2024-12-15 10:30:00 - INFO - NBA Historical Game Logs Builder
-2024-12-15 10:30:00 - INFO - ================================================================================
-2024-12-15 10:30:00 - INFO - Date Range: 20241201 to 20241231
-2024-12-15 10:30:00 - INFO - Storage: Parquet format in ./data/inputs/
-2024-12-15 10:30:00 - INFO - API Rate Limit: 1000 requests/month
-Proceed with collection? (y/n): y
-
-2024-12-15 10:30:05 - INFO - Step 1: Collecting schedules
-2024-12-15 10:30:05 - INFO - [1/31] Fetching schedule for 20241201
-2024-12-15 10:30:06 - INFO - Saved schedule for 20241201 with 11 games
-2024-12-15 10:30:06 - INFO - [2/31] Fetching schedule for 20241202
-...
-2024-12-15 10:35:00 - INFO - Schedule collection complete: 31/31 dates
-2024-12-15 10:35:00 - INFO - Remaining requests: 969/1000
-
-2024-12-15 10:35:00 - INFO - Step 2: Collecting box scores
-2024-12-15 10:35:00 - INFO - [1/31] Processing box scores for 20241201
-2024-12-15 10:35:00 - INFO - Found 11 games for 20241201
-2024-12-15 10:35:01 - INFO - Saved box score for BOS@MIA_20241201
-2024-12-15 10:35:02 - INFO - Saved box score for LAL@GSW_20241201
-...
-2024-12-15 10:35:15 - INFO - Progress: 5/31 dates, 55 games collected
-2024-12-15 10:35:15 - INFO - Remaining requests: 914/1000
-...
-2024-12-15 10:45:00 - INFO - Box score collection complete: 341 games collected
-2024-12-15 10:45:00 - INFO - Requests used: 372
-2024-12-15 10:45:00 - INFO - Remaining requests: 628/1000
-2024-12-15 10:45:00 - INFO - Collection complete
-```
+- Load via ParquetStorage.load(data_type, filters)
 
 ### Prerequisites
 
@@ -141,3 +338,229 @@ Script continues on errors:
 4. Box scores are bulk of API usage (1 per game)
 5. Use -y flag for automated/scheduled runs
 6. Check ./data/inputs/ directories after completion
+
+---
+
+## collect_dfs_salaries.py
+
+Collects DFS salary data from Tank01 API for a specified date range.
+
+### Usage
+
+```bash
+python scripts/collect_dfs_salaries.py --start-date YYYYMMDD --end-date YYYYMMDD
+```
+
+### Arguments
+
+Required:
+- `--start-date`: First date to collect (format: YYYYMMDD)
+- `--end-date`: Last date to collect (format: YYYYMMDD)
+
+Optional:
+- `--platform`: DFS platform (default: DraftKings)
+- `--yes`, `-y`: Skip confirmation prompt
+
+### Example
+
+```bash
+python scripts/collect_dfs_salaries.py --start-date 20241201 --end-date 20241231
+```
+
+### Data Collected
+
+DFS salary data (per date):
+- playerID: Unique player identifier
+- longName: Full player name
+- team: Team abbreviation
+- teamID: Team identifier
+- pos: Primary position
+- allValidPositions: All eligible positions
+- salary: DFS salary for the platform
+- platform: DFS platform (DraftKings, FanDuel, etc)
+
+### Storage Format
+
+- Format: Parquet
+- Location: ./data/inputs/dfs_salaries/
+- Filename pattern: dfs_salaries_YYYYMMDD.parquet
+
+### Prerequisites
+
+- TANK01_API_KEY in .env file
+- RapidAPI subscription to Tank01 Fantasy Stats API
+
+---
+
+## load_games_to_db.py
+
+Loads collected game data from Parquet files into SQLite database for legacy compatibility and SQL analysis.
+
+### Usage
+
+```bash
+python scripts/load_games_to_db.py
+```
+
+### What It Does
+
+1. Reads Parquet files from ./data/inputs/
+2. Transforms data for database schema
+3. Loads data into nba_dfs.db SQLite database
+4. Creates tables: player_logs, games, dfs_salaries, injuries, seasons
+
+### Database Tables
+
+- player_logs: Player performance statistics per game
+- games: NBA game schedule with matchup information
+- dfs_salaries: DFS platform salaries by date and platform
+- injuries: Player injury reports and statuses
+- seasons: NBA season metadata with start and end dates
+
+Note: Parquet files are the primary data source. SQLite database is for legacy compatibility and SQL-based analysis.
+
+See [data/data_readme.md](../data/data_readme.md) for full database schema documentation.
+
+---
+
+## collect_depth_charts.py
+
+Collects NBA team depth charts showing player rotation priorities for each position.
+
+### Usage
+
+```bash
+# Collect all teams' depth charts
+python scripts/collect_depth_charts.py --all-teams
+
+# Collect specific team
+python scripts/collect_depth_charts.py --team LAL
+
+# Save to SQLite instead of Parquet
+python scripts/collect_depth_charts.py --all-teams --storage sqlite
+
+# Verbose output
+python scripts/collect_depth_charts.py --all-teams --verbose
+```
+
+### Arguments
+
+Optional:
+- `--team`: Team abbreviation (e.g., LAL, BOS)
+- `--all-teams`: Collect all teams (default if no team specified)
+- `--storage`: Storage type - 'parquet' (default) or 'sqlite'
+- `--db-path`: SQLite database path (default: nba_dfs.db)
+- `--verbose`: Enable verbose output
+
+### Example
+
+```bash
+# Collect all teams to Parquet
+python scripts/collect_depth_charts.py --all-teams --verbose
+
+# Collect Lakers depth chart to SQLite
+python scripts/collect_depth_charts.py --team LAL --storage sqlite
+```
+
+### Data Collected
+
+Depth chart data per team/position:
+- team: Team abbreviation
+- position: Player position (PG, SG, SF, PF, C)
+- depth_order: Rotation priority (1 = starter, 2 = backup, etc.)
+- playerID: Unique player identifier
+- playerName: Full player name
+- collection_date: Date of collection (YYYYMMDD)
+
+### Storage Format
+
+Parquet storage:
+- Location: ./data/inputs/depth_charts/
+- Filename pattern: depth_charts_YYYYMMDD.parquet
+
+SQLite storage:
+- Table: depth_charts
+- Unique constraint on (team, position, depth_order, collection_date)
+
+### Use Cases
+
+Depth charts are valuable for:
+- **Playing Time Projection**: Starters typically play more minutes
+- **Injury Impact**: Identify who benefits when a player is out
+- **Usage Rate Changes**: Role changes affect shot attempts
+- **DFS Strategy**: Target value plays based on rotation changes
+- **Coaching Patterns**: Track rotation tendencies
+
+### Prerequisites
+
+- TANK01_API_KEY in .env file
+- RapidAPI subscription to Tank01 Fantasy Stats API
+
+### API Usage
+
+- 1 API request for all teams
+- 1 API request per specific team
+
+---
+
+## optimize_xgboost_hyperparameters.py
+
+Bayesian hyperparameter optimization for XGBoost models using Optuna.
+
+### Usage
+
+```bash
+python scripts/optimize_xgboost_hyperparameters.py
+```
+
+### Arguments
+
+Optional:
+- `--feature-config NAME`: Feature configuration to use (default: default_features)
+- `--per-player`: Run per-player optimization (default: slate-level)
+- `--n-trials INT`: Number of optimization trials (default: 30)
+- `--cv-folds INT`: Cross-validation folds (default: 3)
+
+### Example
+
+```bash
+python scripts/optimize_xgboost_hyperparameters.py --feature-config default_features --n-trials 50
+```
+
+```bash
+python scripts/optimize_xgboost_hyperparameters.py --per-player --feature-config base_features
+```
+
+### What It Does
+
+Slate-level optimization:
+1. Loads historical player logs
+2. Builds features using specified config
+3. Performs Bayesian optimization with Optuna
+4. Outputs best hyperparameters
+5. Saves results to optimization_results.json
+
+Per-player optimization:
+1. Selects sample of players for optimization
+2. Runs optimization for each player
+3. Aggregates best parameters across players
+4. Outputs per-player and aggregated results
+
+### Hyperparameters Optimized
+
+- max_depth: Tree depth (3-10)
+- learning_rate: Step size (0.01-0.3)
+- n_estimators: Number of trees (100-500)
+- subsample: Row sampling ratio (0.6-1.0)
+- colsample_bytree: Column sampling ratio (0.6-1.0)
+- min_child_weight: Minimum sum of instance weight (1-10)
+- gamma: Minimum loss reduction (0-1)
+
+### Output
+
+Results saved to optimization_results.json:
+- best_params: Optimal hyperparameters
+- best_score: Best MAE achieved
+- n_trials: Number of trials run
+- feature_config: Configuration used
+- timestamp: When optimization was run

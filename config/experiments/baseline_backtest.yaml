@@ -1,0 +1,49 @@
+name: "Baseline Backtest - XGBoost with Standard Features"
+description: "Initial backtest using XGBoost with rolling window features"
+version: "1.0.0"
+
+data:
+  train_start: "20231101"
+  train_end: "20240229"
+  test_start: "20240301"
+  test_end: "20240331"
+
+features:
+  pipeline:
+    - name: "rolling_stats"
+      windows: [3, 5, 10]
+      stats: ["pts", "reb", "ast", "stl", "blk", "fpts", "mins"]
+    - name: "ewma"
+      span: 5
+      stats: ["pts", "mins", "fpts"]
+
+model:
+  type: "xgboost"
+  params:
+    max_depth: 6
+    learning_rate: 0.05
+    n_estimators: 200
+    min_child_weight: 5
+    subsample: 0.8
+    colsample_bytree: 0.8
+
+optimization:
+  cash:
+    strategy: "linear_program"
+    num_lineups: 3
+    objective: "maximize_floor"
+  gpp:
+    strategy: "genetic"
+    num_lineups: 150
+    objective: "maximize_ceiling"
+    diversity: 0.70
+
+evaluation:
+  metrics:
+    - "mape"
+    - "rmse"
+    - "correlation"
+  save_daily_results: true
+  output_dir: "data/backtest_results"
+
+seed: 42

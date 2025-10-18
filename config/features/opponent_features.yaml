@@ -1,0 +1,146 @@
+name: "Opponent Features"
+description: "Team-level opponent statistics for matchup context in DFS predictions"
+version: "1.0.0"
+
+rolling_windows: [3, 5, 10]
+ewma_span: 5
+
+metadata_cols:
+  - playerID
+  - playerName
+  - team
+  - teamAbv
+  - pos
+  - gameDate
+  - gameID
+  - fpts
+  - target
+  - pts
+  - reb
+  - ast
+  - stl
+  - blk
+  - TOV
+  - mins
+
+categorical_features:
+  - team
+  - teamAbv
+  - pos
+  - opponent_team
+  - is_home_team
+  - days_rest_category
+
+# Core player stats to include alongside opponent features
+stats:
+  - pts
+  - reb
+  - ast
+  - stl
+  - blk
+  - TOV
+  - mins
+  - PF
+  - fga
+  - fgm
+  - fgp
+  - fta
+  - ftm
+  - ftp
+  - tptfga
+  - tptfgm
+  - tptfgp
+  - OffReb
+  - DefReb
+  - usage
+  - plusMinus
+  - fantasyPoints
+
+# Opponent feature configuration
+opponent_features:
+  # High-impact features (Phase 1)
+  - opp_pace                    # Opponent pace of play
+  - opp_def_rating_last_10     # Recent defensive performance 
+  - opp_pg_fpts_allowed        # Fantasy points allowed to PG
+  - opp_sg_fpts_allowed        # Fantasy points allowed to SG
+  - opp_sf_fpts_allowed        # Fantasy points allowed to SF
+  - opp_pf_fpts_allowed        # Fantasy points allowed to PF
+  - opp_c_fpts_allowed         # Fantasy points allowed to C
+  - is_home_team               # Home/away indicator (1=home, 0=away)
+  - opp_3pt_defense_rank       # 3-point defense ranking (1-30)
+  - opp_rest_days              # Opponent days of rest
+  
+  # Medium-impact features (Phase 2)
+  - opp_foul_rate              # Opponent fouls per game
+  - opp_turnover_rate          # Opponent turnover rate
+
+transformers:
+  # Basic rolling stats for core player performance
+  - type: rolling_stats
+    params:
+      windows: [3, 5, 10]
+      stats: [pts, reb, ast, stl, blk, mins, fpts]
+      include_std: true
+
+  # Opponent statistics transformer (main addition)
+  - type: opponent_stats
+    params:
+      features:
+        - opp_pace
+        - opp_def_rating_last_10
+        - opp_pg_fpts_allowed
+        - opp_sg_fpts_allowed
+        - opp_sf_fpts_allowed
+        - opp_pf_fpts_allowed
+        - opp_c_fpts_allowed
+        - is_home_team
+        - opp_3pt_defense_rank
+        - opp_rest_days
+        - opp_foul_rate
+        - opp_turnover_rate
+      lookback_days: 365           # Days to look back for team stats
+      recent_games_window: 10      # Games for recent form metrics
+
+  # EWMA for recent player form
+  - type: ewma
+    params:
+      span: 5
+      stats: [pts, reb, ast, stl, blk, fpts]
+
+  # Target variable (fantasy points prediction)
+  - type: target
+    params:
+      target_col: fpts
+      shift_periods: -1
+
+  # Injury status features
+  - type: injury
+    params: {}
+
+# Expected feature impact (for documentation)
+expected_improvements:
+  opp_pace: "2-4% MAPE improvement"
+  position_matchups: "3-5% MAPE improvement" 
+  is_home_team: "1-2% MAPE improvement"
+  recent_defense: "2-3% MAPE improvement"
+  combined_impact: "8-15% overall MAPE improvement"
+
+# Validation thresholds
+validation:
+  min_games_per_team: 20         # Minimum games required for team stats
+  min_opponent_coverage: 0.85    # Minimum % of games with opponent data
+  max_missing_features: 0.10     # Maximum % missing opponent features
+
+# Feature importance ranking (expected)
+feature_priority:
+  high_impact:
+    - opp_pace
+    - opp_pg_fpts_allowed
+    - is_home_team
+  medium_impact:
+    - opp_def_rating_last_10
+    - opp_3pt_defense_rank
+    - opp_rest_days
+  low_impact:
+    - opp_foul_rate
+    - opp_turnover_rate

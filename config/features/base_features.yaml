@@ -1,0 +1,32 @@
+name: "Base Feature Set"
+description: "Minimal feature set with core stats only for fast experimentation"
+version: "2.0.0"
+
+rolling_windows: [3, 5, 10]
+ewma_span: 5
+
+stats:
+  - pts
+  - reb
+  - ast
+  - stl
+  - blk
+  - mins
+
+transformers:
+  - type: rolling_stats
+    params:
+      windows: [3, 5, 10]
+      include_std: true
+
+  - type: ewma
+    params:
+      span: 5
+
+  - type: target
+    params:
+      target_col: fpts
+      shift_periods: -1
+
+  - type: injury
+    params: {}

@@ -1,0 +1,16 @@
+name: "XGBoost Default Configuration"
+description: "Baseline XGBoost hyperparameters for player projection"
+version: "1.0.0"
+
+model:
+  type: "xgboost"
+  params:
+    max_depth: 6
+    learning_rate: 0.05
+    n_estimators: 200
+    min_child_weight: 5
+    subsample: 0.8
+    colsample_bytree: 0.8
+    objective: "reg:squarederror"
+    random_state: 42
+tree_method: "hist"

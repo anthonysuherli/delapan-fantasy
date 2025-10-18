@@ -1,0 +1,71 @@
+name: "Default Feature Set"
+description: "Full feature set with all available stats, rolling windows, and EWMA"
+version: "2.0.0"
+
+rolling_windows: [3, 5, 10]
+ewma_span: 5
+
+metadata_cols:
+  - playerID
+  - playerName
+  - team
+  - pos
+  - gameDate
+  - fpts
+  - target
+  - pts
+  - reb
+  - ast
+  - stl
+  - blk
+  - TOV
+  - mins
+
+categorical_features:
+  - team
+  - pos
+  - opponent_team
+  - is_home
+  - back_to_back
+  - days_rest_category
+
+stats:
+  - pts
+  - reb
+  - ast
+  - stl
+  - blk
+  - TOV
+  - mins
+  - PF
+  - fga
+  - fgm
+  - fgp
+  - fta
+  - ftm
+  - ftp
+  - tptfga
+  - tptfgm
+  - tptfgp
+  - OffReb
+  - DefReb
+  - usage
+  - plusMinus
+
+transformers:
+  - type: rolling_stats
+    params:
+      windows: [3, 5, 10]
+      include_std: true
+
+  - type: ewma
+    params:
+      span: 5
+
+  - type: target
+    params:
+      target_col: fpts
+      shift_periods: -1
+
+  - type: injury
+    params: {}
