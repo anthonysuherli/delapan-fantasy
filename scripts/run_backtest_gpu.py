@@ -419,10 +419,18 @@ def main():
         logger.info(f"Model MAPE: {results.get('model_mean_mape', 0):.2f}%")
         logger.info(f"Benchmark MAPE: {results.get('benchmark_mean_mape', 0):.2f}%")
         logger.info(f"Improvement: {results.get('mape_improvement', 0):+.2f}%")
+        logger.info("")
 
-        if 'report_path' in results:
-            logger.info(f"Comprehensive report: {results['report_path']}")
+        if 'report_url' in results:
+            logger.info("REPORT READY - Click to open:")
+            logger.info(results['report_url'])
+        elif 'report_path' in results:
+            from pathlib import Path
+            report_file_url = Path(results['report_path']).absolute().as_uri()
+            logger.info("REPORT READY - Click to open:")
+            logger.info(report_file_url)
 
+        logger.info("")
         logger.info(f"All outputs saved to: {output_path}")
         logger.info("="*80)
 

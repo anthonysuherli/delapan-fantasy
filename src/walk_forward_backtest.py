@@ -889,7 +889,20 @@ class WalkForwardBacktest:
                 chart_paths=chart_paths
             )
             logger.info(f"PDF-styled report generated: {pdf_report_path}")
+
+            # Create clickable file:// URL for easy access
+            from pathlib import Path
+            import urllib.parse
+            report_file_url = Path(pdf_report_path).absolute().as_uri()
+            logger.info("")
+            logger.info("="*80)
+            logger.info("REPORT READY - Click to open:")
+            logger.info(report_file_url)
+            logger.info("="*80)
+            logger.info("")
+
             results['report_path'] = str(pdf_report_path)
+            results['report_url'] = report_file_url
         except Exception as e:
             logger.error(f"Failed to generate PDF report: {str(e)}", exc_info=True)
             import traceback
