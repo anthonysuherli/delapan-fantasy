@@ -23,6 +23,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.walk_forward_backtest import WalkForwardBacktest
 from src.data.loaders.historical_loader import HistoricalDataLoader
+from src.filters import ColumnFilter, InjuryFilter, CompositeFilter
 
 
 def parse_args():
@@ -200,6 +201,38 @@ def parse_args():
         help="Weight type for WMAPE (default: actual_fpts)"
     )
 
+    parser.add_argument(
+        "--filter-salary-min",
+        type=int,
+        default=None,
+        help="Minimum salary filter (default: None)"
+    )
+
+    parser.add_argument(
+        "--filter-salary-max",
+        type=int,
+        default=None,
+        help="Maximum salary filter (default: None)"
+    )
+
+    parser.add_argument(
+        "--filter-exclude-out",
+        action="store_true",
+        help="Exclude players ruled out with injuries"
+    )
+
+    parser.add_argument(
+        "--filter-exclude-doubtful",
+        action="store_true",
+        help="Exclude players with doubtful injury status"
+    )
+
+    parser.add_argument(
+        "--filter-exclude-questionable",
+        action="store_true",
+        help="Exclude players with questionable injury status"
+    )
+
     return parser.parse_args()
 
 
@@ -280,6 +313,36 @@ def main():
         }
         print("Using default hyperparameters from command-line arguments\n")
 
+    player_filters = []
+    if args.filter_salary_min is not None:
+        salary_filter = ColumnFilter('salary', '>=', args.filter_salary_min)
+        player_filters.append(salary_filter)
+        print(f"Filter: salary >= {args.filter_salary_min}")
+
+    if args.filter_salary_max is not None:
+        salary_filter = ColumnFilter('salary', '<=', args.filter_salary_max)
+        player_filters.append(salary_filter)
+        print(f"Filter: salary <= {args.filter_salary_max}")
+
+    if args.filter_exclude_out or args.filter_exclude_doubtful or args.filter_exclude_questionable:
+        injury_filter = InjuryFilter(
+            exclude_out=args.filter_exclude_out,
+            exclude_doubtful=args.filter_exclude_doubtful,
+            exclude_questionable=args.filter_exclude_questionable
+        )
+        player_filters.append(injury_filter)
+        excluded = []
+        if args.filter_exclude_out:
+            excluded.append('OUT')
+        if args.filter_exclude_doubtful:
+            excluded.append('DOUBTFUL')
+        if args.filter_exclude_questionable:
+            excluded.append('QUESTIONABLE')
+        print(f"Filter: exclude injury status {', '.join(excluded)}")
+
+    if player_filters:
+        print(f"\nTotal filters: {len(player_filters)}\n")
+
     backtest = WalkForwardBacktest(
         db_path=args.db_path,
         data_dir=args.data_dir,
@@ -301,10 +364,11 @@ def main():
         save_predictions=not args.no_save_predictions,
         n_jobs=args.n_jobs,
         rewrite_models=args.rewrite_models,
-        resume_from_run=args.resume_from_run
-        ,minutes_threshold=args.minutes_threshold
-        ,cmape_cap=args.cmape_cap
-        ,wmape_weight=args.wmape_weight
+        resume_from_run=args.resume_from_run,
+        minutes_threshold=args.minutes_threshold,
+        cmape_cap=args.cmape_cap,
+        wmape_weight=args.wmape_weight,
+        player_filters=player_filters if player_filters else None
     )
 
     results = backtest.run()

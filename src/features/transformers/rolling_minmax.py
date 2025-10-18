@@ -60,6 +60,9 @@ class RollingMinMaxTransformer(FeatureTransformer):
         df['gameDate'] = pd.to_datetime(df['gameDate'], format='%Y%m%d', errors='coerce')
         df = df.sort_values(['playerID', 'gameDate'])
 
+        # Collect all new columns to avoid DataFrame fragmentation
+        new_columns = {}
+
         for stat in self.stats:
             if stat not in df.columns:
                 continue
@@ -70,11 +73,16 @@ class RollingMinMaxTransformer(FeatureTransformer):
                 min_col = f'{stat}_min{window}'
                 max_col = f'{stat}_max{window}'
 
-                df[min_col] = df.groupby('playerID')[stat].transform(
+                # Compute rolling features and store in dictionary
+                new_columns[min_col] = df.groupby('playerID')[stat].transform(
                     lambda x: x.rolling(window=window, min_periods=1).min()
                 )
-                df[max_col] = df.groupby('playerID')[stat].transform(
+                new_columns[max_col] = df.groupby('playerID')[stat].transform(
                     lambda x: x.rolling(window=window, min_periods=1).max()
                 )
+
+        # Concatenate all new columns at once to avoid fragmentation
+        if new_columns:
+            df = pd.concat([df, pd.DataFrame(new_columns, index=df.index)], axis=1)
 
         return df

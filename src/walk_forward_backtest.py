@@ -19,6 +19,8 @@ from src.utils.fantasy_points import calculate_dk_fantasy_points
 from src.features.pipeline import FeaturePipeline
 from src.utils.feature_config import load_feature_config
 from src.evaluation.report_generator import BacktestReportGenerator
+from src.evaluation.performance_profiler import PerformanceProfiler
+from src.filters.base import PlayerFilter
 from src.config.paths import (
     PER_PLAYER_MODEL_DIR,
     PER_SLATE_MODEL_DIR,
@@ -38,7 +40,8 @@ def _train_single_player_model(
     min_player_games: int,
     save_models: bool,
     models_dir: Path,
-    inputs_dir: Path
+    inputs_dir: Path,
+    injuries: Optional[pd.DataFrame] = None
 ) -> Optional[Dict[str, Any]]:
     """
     Worker function for parallel per-player model training.
@@ -61,8 +64,11 @@ def _train_single_player_model(
         if 'fpts' not in df.columns:
             df['fpts'] = df.apply(calculate_dk_fantasy_points, axis=1)
 
-        df['target'] = df.groupby('playerID')['fpts'].shift(-1)
-        df = feature_pipeline.fit_transform(df)
+        context = {}
+        if injuries is not None and not injuries.empty:
+            context['injuries'] = injuries
+
+        df = feature_pipeline.fit_transform(df, context=context)
         df = df.dropna(subset=['target'])
 
         metadata_cols = [
@@ -157,7 +163,8 @@ class WalkForwardBacktest:
         resume_from_run: Optional[str] = None,
         minutes_threshold: int = 12,
         cmape_cap: float = 8.0,
-        wmape_weight: str = 'actual_fpts'
+        wmape_weight: str = 'actual_fpts',
+        player_filters: Optional[List[PlayerFilter]] = None
     ):
         self.train_start = train_start
         self.train_end = train_end
@@ -181,6 +188,7 @@ class WalkForwardBacktest:
         self.minutes_threshold = int(minutes_threshold)
         self.cmape_cap = float(cmape_cap)
         self.wmape_weight = str(wmape_weight)
+        self.player_filters = player_filters or []
 
         if data_dir:
             data_path = Path(data_dir)
@@ -218,6 +226,8 @@ class WalkForwardBacktest:
         self.current_model = None
         self.player_models = {}
         self.last_training_date = None
+
+        self.profiler = PerformanceProfiler()
 
         self.config = {
             'train_start': train_start,
@@ -259,10 +269,15 @@ class WalkForwardBacktest:
         logger.info(f"Parallel jobs: {n_jobs} ({'all cores' if n_jobs == -1 else 'sequential' if n_jobs == 1 else f'{n_jobs} workers'})")
         logger.info(f"Using YAML-configured feature pipeline")
         logger.info(f"Metrics: minutes_threshold={self.minutes_threshold}, cmape_cap={self.cmape_cap}, wmape_weight={self.wmape_weight}")
+        if self.player_filters:
+            logger.info(f"Player filters: {len(self.player_filters)} filters")
+            for pf in self.player_filters:
+                logger.info(f"  - {pf}")
 
     def _build_training_features(
         self,
-        training_data: pd.DataFrame
+        training_data: pd.DataFrame,
+        injuries: Optional[pd.DataFrame] = None
     ) -> Tuple[pd.DataFrame, pd.Series]:
         """
         Build training features using FeaturePipeline.
@@ -277,9 +292,11 @@ class WalkForwardBacktest:
         if 'fpts' not in df.columns:
             df['fpts'] = df.apply(calculate_dk_fantasy_points, axis=1)
 
-        df['target'] = df.groupby('playerID')['fpts'].shift(-1)
+        context = {}
+        if injuries is not None and not injuries.empty:
+            context['injuries'] = injuries
 
-        df = self.feature_pipeline.fit_transform(df)
+        df = self.feature_pipeline.fit_transform(df, context=context)
 
         df = df.dropna(subset=['target'])
 
@@ -316,6 +333,12 @@ class WalkForwardBacktest:
         if salaries_df.empty:
             return pd.DataFrame()
 
+        if self.player_filters:
+            initial_count = len(salaries_df)
+            for pf in self.player_filters:
+                salaries_df = pf.apply(salaries_df)
+            logger.debug(f"Slate features: {len(salaries_df)}/{initial_count} players after filters")
+
         if 'longName' in salaries_df.columns and 'playerName' not in salaries_df.columns:
             salaries_df['playerName'] = salaries_df['longName']
 
@@ -325,7 +348,12 @@ class WalkForwardBacktest:
         if 'fpts' not in training_data.columns:
             training_data['fpts'] = training_data.apply(calculate_dk_fantasy_points, axis=1)
 
-        training_features = self.feature_pipeline.transform(training_data).copy()
+        context = {}
+        injuries_data = slate_data.get('injuries', pd.DataFrame())
+        if not injuries_data.empty:
+            context['injuries'] = injuries_data
+
+        training_features = self.feature_pipeline.transform(training_data, context=context).copy()
 
         metadata_cols = [
             'playerID', 'playerName', 'longName', 'team', 'teamAbv', 'teamID',
@@ -387,6 +415,7 @@ class WalkForwardBacktest:
     def run(self) -> Dict[str, Any]:
         from datetime import datetime as dt
 
+        self.profiler.start_backtest()
         backtest_start_time = time.perf_counter()
 
         if self.resume_from_run:
@@ -444,44 +473,47 @@ class WalkForwardBacktest:
         logger.info("="*80)
         logger.info("INITIALIZING BENCHMARK")
         logger.info("="*80)
-        benchmark_start_time = time.perf_counter()
-        logger.info("Loading training data for benchmark...")
-        training_data_full = self.loader.load_historical_player_logs(
-            start_date=self.train_start,
-            end_date=self.train_end,
-            num_seasons=self.num_seasons
-        )
-        logger.info(f"Loaded {len(training_data_full)} training records")
 
-        logger.info("Building features for benchmark...")
-        training_data_sorted = training_data_full.copy()
-        training_data_sorted['gameDate'] = pd.to_datetime(training_data_sorted['gameDate'], format='%Y%m%d', errors='coerce')
-        training_data_sorted = training_data_sorted.sort_values(['playerID', 'gameDate'])
+        with self.profiler.track("benchmark_initialization") as bench_metrics:
+            benchmark_start_time = time.perf_counter()
+            logger.info("Loading training data for benchmark...")
+            training_data_full = self.loader.load_historical_player_logs(
+                start_date=self.train_start,
+                end_date=self.train_end,
+                num_seasons=self.num_seasons
+            )
+            logger.info(f"Loaded {len(training_data_full)} training records")
+            bench_metrics.num_samples = len(training_data_full)
 
-        if 'fpts' not in training_data_sorted.columns:
-            training_data_sorted['fpts'] = training_data_sorted.apply(calculate_dk_fantasy_points, axis=1)
-            logger.info("Calculated fantasy points for training data")
+            logger.info("Building features for benchmark...")
+            training_data_sorted = training_data_full.copy()
+            training_data_sorted['gameDate'] = pd.to_datetime(training_data_sorted['gameDate'], format='%Y%m%d', errors='coerce')
+            training_data_sorted = training_data_sorted.sort_values(['playerID', 'gameDate'])
 
-        training_features = self.feature_pipeline.fit_transform(training_data_sorted)
-        logger.info(f"Generated {len(training_features)} feature rows with {len([c for c in training_features.columns if c.startswith(('rolling_', 'ewma_'))])} features")
+            if 'fpts' not in training_data_sorted.columns:
+                training_data_sorted['fpts'] = training_data_sorted.apply(calculate_dk_fantasy_points, axis=1)
+                logger.info("Calculated fantasy points for training data")
 
-        df_qualified = training_features[
-            training_features.groupby('playerID')['playerID'].transform('size') >= self.min_games_for_benchmark
-        ].copy()
-        logger.info(f"Qualified players: {df_qualified['playerID'].nunique()} (min_games={self.min_games_for_benchmark})")
+            training_features = self.feature_pipeline.fit_transform(training_data_sorted)
+            logger.info(f"Generated {len(training_features)} feature rows with {len([c for c in training_features.columns if c.startswith(('rolling_', 'ewma_'))])} features")
 
-        logger.info("Initializing SeasonAverageBenchmark...")
-        self.benchmark = SeasonAverageBenchmark(min_games=self.min_games_for_benchmark)
-        self.benchmark.fit(df_qualified)
+            df_qualified = training_features[
+                training_features.groupby('playerID')['playerID'].transform('size') >= self.min_games_for_benchmark
+            ].copy()
+            logger.info(f"Qualified players: {df_qualified['playerID'].nunique()} (min_games={self.min_games_for_benchmark})")
 
-        logger.info(f"Benchmark fitted successfully for {len(self.benchmark.player_averages)} players")
+            logger.info("Initializing SeasonAverageBenchmark...")
+            self.benchmark = SeasonAverageBenchmark(min_games=self.min_games_for_benchmark)
+            self.benchmark.fit(df_qualified)
 
-        top_5 = sorted(self.benchmark.player_averages.items(), key=lambda x: x[1], reverse=True)[:5]
-        logger.info("Top 5 benchmark averages:")
-        for player_id, avg_fpts in top_5:
-            if player_id in df_qualified['playerID'].values:
-                player_name = df_qualified[df_qualified['playerID'] == player_id]['longName'].iloc[0] if 'longName' in df_qualified.columns else 'Unknown'
-                logger.info(f"  {player_name}: {avg_fpts:.2f} fpts")
+            logger.info(f"Benchmark fitted successfully for {len(self.benchmark.player_averages)} players")
+
+            top_5 = sorted(self.benchmark.player_averages.items(), key=lambda x: x[1], reverse=True)[:5]
+            logger.info("Top 5 benchmark averages:")
+            for player_id, avg_fpts in top_5:
+                if player_id in df_qualified['playerID'].values:
+                    player_name = df_qualified[df_qualified['playerID'] == player_id]['longName'].iloc[0] if 'longName' in df_qualified.columns else 'Unknown'
+                    logger.info(f"  {player_name}: {avg_fpts:.2f} fpts")
 
         benchmark_elapsed = time.perf_counter() - benchmark_start_time
         logger.info(f"Benchmark initialization completed in {self._format_time(benchmark_elapsed)}")
@@ -504,6 +536,9 @@ class WalkForwardBacktest:
             logger.info(f"Processing slate {i+1}/{len(slate_dates)}: {test_date}")
 
             slate_data = self.loader.load_slate_data(test_date)
+            injuries_data = self.loader.load_slate_injuries(test_date)
+
+            slate_data['injuries'] = injuries_data
 
             salaries_df = slate_data.get('dfs_salaries', pd.DataFrame())
             if salaries_df.empty:
@@ -527,7 +562,10 @@ class WalkForwardBacktest:
                 should_train = self._should_recalibrate(test_date)
 
                 if should_train:
-                    X_train, y_train = self._build_training_features(training_data)
+                    injuries_data = slate_data.get('injuries', pd.DataFrame())
+
+                    with self.profiler.track("feature_engineering", num_samples=len(training_data), date=test_date):
+                        X_train, y_train = self._build_training_features(training_data, injuries_data)
 
                     if X_train.empty or y_train.empty:
                         logger.warning(f"Feature generation failed for {test_date}")
@@ -535,12 +573,13 @@ class WalkForwardBacktest:
 
                     input_file = self.run_inputs_dir / f"slate_training_inputs_{test_date}.parquet"
 
-                    model = self._train_model(
-                        X_train,
-                        y_train,
-                        save_inputs=True,
-                        input_save_path=str(input_file)
-                    )
+                    with self.profiler.track("model_training", num_samples=len(X_train), model_type=self.model_type, date=test_date):
+                        model = self._train_model(
+                            X_train,
+                            y_train,
+                            save_inputs=True,
+                            input_save_path=str(input_file)
+                        )
                     self.current_model = model
                     self.last_training_date = test_date
                     logger.info(f"Model trained and cached for {test_date}")
@@ -557,24 +596,27 @@ class WalkForwardBacktest:
                     model = self.current_model
                     logger.info(f"Reusing model from {self.last_training_date}")
 
-                slate_features = self._build_slate_features(slate_data, training_data)
+                with self.profiler.track("slate_feature_engineering", date=test_date):
+                    slate_features = self._build_slate_features(slate_data, training_data)
 
                 if slate_features.empty:
                     logger.warning(f"No slate features for {test_date}")
                     continue
 
-                projections = self._generate_projections(model, slate_features)
+                with self.profiler.track("prediction_generation", num_samples=len(slate_features), date=test_date):
+                    projections = self._generate_projections(model, slate_features)
 
             if projections.empty:
                 logger.warning(f"No projections generated for {test_date}")
                 continue
 
-            logger.info(f"Adding benchmark predictions...")
-            projections['benchmark_pred'] = projections['playerID'].map(
-                self.benchmark.player_averages
-            ).fillna(0)
-            has_benchmark = (projections['benchmark_pred'] > 0).sum()
-            logger.info(f"Benchmark predictions: {has_benchmark}/{len(projections)} players")
+            with self.profiler.track("benchmark_prediction"):
+                logger.info(f"Adding benchmark predictions...")
+                projections['benchmark_pred'] = projections['playerID'].map(
+                    self.benchmark.player_averages
+                ).fillna(0)
+                has_benchmark = (projections['benchmark_pred'] > 0).sum()
+                logger.info(f"Benchmark predictions: {has_benchmark}/{len(projections)} players")
 
             if self.save_predictions:
                 logger.info("Saving predictions to parquet...")
@@ -583,14 +625,16 @@ class WalkForwardBacktest:
                 logger.info(f"Saved predictions: {predictions_path}")
                 logger.info(f"  Players: {len(projections)}, Columns: {len(projections.columns)}")
 
-            actuals = self._load_actuals(test_date)
+            with self.profiler.track("load_actuals", date=test_date):
+                actuals = self._load_actuals(test_date)
 
             if actuals.empty:
                 logger.warning(f"No actual results for {test_date}")
                 continue
 
             logger.info("Evaluating predictions against actuals...")
-            daily_results, merged_df = self._evaluate_slate(test_date, projections, actuals)
+            with self.profiler.track("evaluation", num_samples=len(projections), date=test_date):
+                daily_results, merged_df = self._evaluate_slate(test_date, projections, actuals)
 
             if self.save_predictions and not merged_df.empty:
                 logger.info("Saving results with actuals...")
@@ -645,6 +689,8 @@ class WalkForwardBacktest:
         backtest_elapsed = time.perf_counter() - backtest_start_time
         logger.info(f"Total backtest time: {self._format_time(backtest_elapsed)}")
 
+        self.profiler.end_backtest()
+
         results = self._aggregate_results()
 
         logger.info("="*80)
@@ -662,6 +708,26 @@ class WalkForwardBacktest:
             results['report_path'] = str(report_path)
         except Exception as e:
             logger.error(f"Failed to generate report: {str(e)}")
+
+        logger.info("="*80)
+        logger.info("GENERATING PERFORMANCE REPORT")
+        logger.info("="*80)
+
+        try:
+            performance_report_path = self.run_output_dir / "performance_report.txt"
+            self.profiler.save_report(str(performance_report_path))
+            logger.info(f"Performance report: {performance_report_path}")
+
+            performance_json_path = self.run_output_dir / "performance_metrics.json"
+            self.profiler.save_json(str(performance_json_path))
+            logger.info(f"Performance metrics: {performance_json_path}")
+
+            logger.info("")
+            logger.info(self.profiler.format_report())
+            results['performance_report_path'] = str(performance_report_path)
+            results['performance_metrics_path'] = str(performance_json_path)
+        except Exception as e:
+            logger.error(f"Failed to generate performance report: {str(e)}")
 
         return results
 
@@ -896,6 +962,25 @@ class WalkForwardBacktest:
         logger.info("Generating per-player model projections")
 
         salaries_df = slate_data['dfs_salaries'].copy()
+
+        # Add injury features to salaries before applying filters
+        injuries_data = slate_data.get('injuries', pd.DataFrame())
+        if not injuries_data.empty:
+            from src.features.transformers.injury import InjuryTransformer
+            injury_transformer = InjuryTransformer()
+            injury_transformer.fit(salaries_df)
+            salaries_df = injury_transformer.transform(salaries_df, injuries_data)
+            logger.info(f"Added injury features to {len(salaries_df)} players for filtering")
+
+        if self.player_filters:
+            logger.info(f"Applying {len(self.player_filters)} player filters...")
+            initial_count = len(salaries_df)
+            for pf in self.player_filters:
+                salaries_df = pf.apply(salaries_df)
+                logger.info(f"  Applied {pf}: {len(salaries_df)} players remaining")
+            logger.info(f"Filter results: {len(salaries_df)}/{initial_count} players passed all filters")
+            salaries_df = salaries_df.reset_index(drop=True)
+
         all_projections = []
 
         total_players = len(salaries_df)
@@ -914,11 +999,13 @@ class WalkForwardBacktest:
             logger.info(f"Reusing cached player models from {self.last_training_date}")
 
         per_player_start_time = time.perf_counter()
+        per_player_profiler_metrics = self.profiler.track("per_player_model_generation", num_samples=total_players, date=test_date, per_player=self.per_player_models).__enter__()
 
         if should_recalibrate and self.n_jobs != 1:
             logger.info(f"Training models in parallel with {self.n_jobs} workers")
 
             player_rows = [row for _, row in salaries_df.iterrows()]
+            injuries_data = slate_data.get('injuries', pd.DataFrame())
 
             results = Parallel(n_jobs=self.n_jobs, verbose=10)(
                 delayed(_train_single_player_model)(
@@ -930,7 +1017,8 @@ class WalkForwardBacktest:
                     self.min_player_games,
                     self.save_models,
                     models_dir,
-                    self.run_inputs_dir
+                    self.run_inputs_dir,
+                    injuries_data
                 )
                 for player_row in player_rows
             )
@@ -977,7 +1065,8 @@ class WalkForwardBacktest:
                     if should_recalibrate or player_id not in self.player_models:
                         model_start_time = time.perf_counter()
 
-                        X_train, y_train = self._build_training_features(player_training_data)
+                        injuries_data = slate_data.get('injuries', pd.DataFrame())
+                        X_train, y_train = self._build_training_features(player_training_data, injuries_data)
 
                         if X_train.empty or y_train.empty or len(X_train) < 3:
                             logger.debug(f"Insufficient features for {player_name}")
@@ -1043,6 +1132,8 @@ class WalkForwardBacktest:
             if model_train_times:
                 avg_train_time = sum(model_train_times) / len(model_train_times)
                 logger.info(f"Average model training time: {self._format_time(avg_train_time)} ({1/avg_train_time:.2f} models/sec)")
+
+        self.profiler.track("per_player_model_generation").__exit__(None, None, None)
 
         if should_recalibrate:
             self.last_training_date = test_date

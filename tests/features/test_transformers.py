@@ -7,6 +7,7 @@ from src.features.transformers.rolling_stats import RollingStatsTransformer
 from src.features.transformers.rolling_minmax import RollingMinMaxTransformer
 from src.features.transformers.ewma import EWMATransformer
 from src.features.transformers.target import TargetTransformer
+from src.features.transformers.injury import InjuryTransformer
 
 
 @pytest.fixture
@@ -279,3 +280,129 @@ class TestTargetTransformer:
 
         with pytest.raises(ValueError, match="Target column"):
             transformer.transform(sample_player_data)
+
+
+@pytest.fixture
+def sample_injury_data():
+    """Create sample injury data"""
+    data = {
+        'playerID': ['player1', 'player2', 'player3'],
+        'designation': ['Out', 'Questionable', 'Day-To-Day'],
+        'injDate': ['20250305', '20250305', '20250305'],
+        'injReturnDate': ['20250307', '20250306', '20250308'],
+        'description': [
+            'Out with knee injury',
+            'Questionable with ankle sprain',
+            'Day-to-day with illness'
+        ]
+    }
+    return pd.DataFrame(data)
+
+
+@pytest.fixture
+def sample_player_roster():
+    """Create sample player roster for injury merging"""
+    data = {
+        'playerID': ['player1', 'player2', 'player3', 'player4'],
+        'playerName': ['Player One', 'Player Two', 'Player Three', 'Player Four'],
+        'team': ['LAL', 'BOS', 'GSW', 'MIA'],
+        'pos': ['PG', 'SG', 'SF', 'PF'],
+        'salary': [9000, 8500, 7500, 6500]
+    }
+    return pd.DataFrame(data)
+
+
+class TestInjuryTransformer:
+    """Test injury data transformer"""
+
+    def test_initialization(self):
+        transformer = InjuryTransformer()
+        assert transformer.name == 'injury'
+
+    def test_fit(self, sample_player_roster):
+        transformer = InjuryTransformer()
+        result = transformer.fit(sample_player_roster)
+        assert transformer.is_fitted
+        assert result is transformer
+
+    def test_transform_with_injuries(self, sample_player_roster, sample_injury_data):
+        transformer = InjuryTransformer()
+        transformer.fit(sample_player_roster)
+        result = transformer.transform(sample_player_roster, injuries=sample_injury_data)
+
+        assert 'injury_status' in result.columns
+        assert 'injury_designation' in result.columns
+        assert 'injury_description' in result.columns
+        assert 'is_injured' in result.columns
+        assert 'is_out' in result.columns
+        assert 'is_questionable' in result.columns
+        assert 'is_doubtful' in result.columns
+        assert 'is_day_to_day' in result.columns
+
+    def test_transform_without_injuries(self, sample_player_roster):
+        transformer = InjuryTransformer()
+        transformer.fit(sample_player_roster)
+        result = transformer.transform(sample_player_roster, injuries=None)
+
+        assert result['injury_status'].eq('Healthy').all()
+        assert result['is_injured'].eq(0).all()
+        assert result['is_out'].eq(0).all()
+
+    def test_injury_flag_out(self, sample_player_roster, sample_injury_data):
+        transformer = InjuryTransformer()
+        transformer.fit(sample_player_roster)
+        result = transformer.transform(sample_player_roster, injuries=sample_injury_data)
+
+        player1_row = result[result['playerID'] == 'player1'].iloc[0]
+        assert player1_row['is_injured'] == 1
+        assert player1_row['is_out'] == 1
+        assert player1_row['injury_designation'] == 'Out'
+
+    def test_injury_flag_questionable(self, sample_player_roster, sample_injury_data):
+        transformer = InjuryTransformer()
+        transformer.fit(sample_player_roster)
+        result = transformer.transform(sample_player_roster, injuries=sample_injury_data)
+
+        player2_row = result[result['playerID'] == 'player2'].iloc[0]
+        assert player2_row['is_injured'] == 1
+        assert player2_row['is_questionable'] == 1
+        assert player2_row['injury_designation'] == 'Questionable'
+
+    def test_injury_flag_day_to_day(self, sample_player_roster, sample_injury_data):
+        transformer = InjuryTransformer()
+        transformer.fit(sample_player_roster)
+        result = transformer.transform(sample_player_roster, injuries=sample_injury_data)
+
+        player3_row = result[result['playerID'] == 'player3'].iloc[0]
+        assert player3_row['is_injured'] == 1
+        assert player3_row['is_day_to_day'] == 1
+        assert player3_row['injury_designation'] == 'Day-To-Day'
+
+    def test_healthy_player(self, sample_player_roster, sample_injury_data):
+        transformer = InjuryTransformer()
+        transformer.fit(sample_player_roster)
+        result = transformer.transform(sample_player_roster, injuries=sample_injury_data)
+
+        player4_row = result[result['playerID'] == 'player4'].iloc[0]
+        assert player4_row['is_injured'] == 0
+        assert player4_row['injury_status'] == 'Healthy'
+
+    def test_merge_injuries_convenience_method(self, sample_player_roster, sample_injury_data):
+        transformer = InjuryTransformer()
+        result = transformer.merge_injuries(sample_player_roster, sample_injury_data)
+
+        assert 'injury_status' in result.columns
+        assert len(result) == len(sample_player_roster)
+
+    def test_transform_without_fit_raises_error(self, sample_player_roster):
+        transformer = InjuryTransformer()
+        with pytest.raises(ValueError, match="has not been fitted"):
+            transformer.transform(sample_player_roster)
+
+    def test_missing_playerid_column_raises_error(self):
+        transformer = InjuryTransformer()
+        df = pd.DataFrame({'name': ['Test']})
+        transformer.fit(df)
+
+        with pytest.raises(ValueError, match="must contain 'playerID'"):
+            transformer.transform(df)

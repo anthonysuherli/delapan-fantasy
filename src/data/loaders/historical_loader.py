@@ -221,6 +221,37 @@ class HistoricalDataLoader(DataLoader):
             logger.error(f"Failed to load historical player logs: {str(e)}")
             raise
 
+    def load_slate_injuries(
+        self,
+        date: str
+    ) -> pd.DataFrame:
+        """
+        Load injury data for a specific slate date.
+
+        Args:
+            date: Date in YYYYMMDD format
+
+        Returns:
+            DataFrame with injury data for the slate date.
+            Columns: designation, injDate, injReturnDate, playerID, description
+        """
+        logger.info(f"Loading injury data for {date}")
+
+        try:
+            filters = {'start_date': date, 'end_date': date}
+            injuries = self.storage.load('injuries', filters)
+
+            if not injuries.empty:
+                logger.info(f"Loaded {len(injuries)} injury records for {date}")
+            else:
+                logger.warning(f"No injury data found for {date}")
+
+            return injuries
+
+        except Exception as e:
+            logger.error(f"Failed to load injuries for {date}: {e}")
+            return pd.DataFrame()
+
     def load_slate_dates(self, start_date: str, end_date: str) -> List[str]:
         """
         Get list of dates with games in date range.

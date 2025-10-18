@@ -42,22 +42,22 @@ model:
     verbosity: 1
 
 # Sample commands for backtesting with RTX 5070:
-#
+
 # Single-day backtest:
 # python scripts/run_backtest_gpu.py --test-start 20250205 --test-end 20250206 --model-config config/models/xgboost_rtx5070.yaml --per-player --gpu-id 0
-#
+
 # Week-long backtest:
 # python scripts/run_backtest_gpu.py --test-start 20250201 --test-end 20250207 --model-config config/models/xgboost_rtx5070.yaml --per-player --gpu-id 0
-#
+
 # Month-long backtest with recalibration:
 # python scripts/run_backtest_gpu.py --test-start 20250201 --test-end 20250228 --model-config config/models/xgboost_rtx5070.yaml --per-player --recalibrate-days 7 --gpu-id 0
-#
+
 # Custom training start with validation:
 # python scripts/run_backtest_gpu.py --train-start 20241101 --train-end 20250131 --test-start 20250201 --test-end 20250215 --model-config config/models/xgboost_rtx5070.yaml --per-player --gpu-id 0
-#
+
 # Monitoring GPU utilization during training:
 # nvidia-smi -l 1
-#
+
 # Notes:
 # - RTX 5070 has 16GB VRAM, can handle 500+ per-player models per slate
 # - max_bin=384 balances memory usage and histogram precision

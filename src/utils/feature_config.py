@@ -119,6 +119,8 @@ class FeatureConfig:
         """
         from src.features.transformers.rolling_stats import RollingStatsTransformer
         from src.features.transformers.ewma import EWMATransformer
+        from src.features.transformers.target import TargetTransformer
+        from src.features.transformers.injury import InjuryTransformer
 
         pipeline = feature_pipeline_class()
 
@@ -147,6 +149,22 @@ class FeatureConfig:
                 )
                 pipeline.add(transformer)
                 logger.info(f"Added EWMATransformer: span={span}, stats={len(self.stats)}")
+
+            elif transformer_type == 'target':
+                target_col = params.get('target_col', 'fpts')
+                shift_periods = params.get('shift_periods', -1)
+
+                transformer = TargetTransformer(
+                    target_col=target_col,
+                    shift_periods=shift_periods
+                )
+                pipeline.add(transformer)
+                logger.info(f"Added TargetTransformer: target_col={target_col}, shift_periods={shift_periods}")
+
+            elif transformer_type == 'injury':
+                transformer = InjuryTransformer()
+                pipeline.add(transformer)
+                logger.info(f"Added InjuryTransformer")
 
             else:
                 logger.warning(f"Unknown transformer type: {transformer_type}")
