@@ -49,18 +49,40 @@ data/
         └── performance_metrics.json
 ```
 
-### 2. colab_backtest.ipynb (Google Colab)
+### 2. colab_backtest.ipynb (Dual-Mode: Colab + Local)
 
 **File**: `notebooks/colab_backtest.ipynb`
 
-#### Status: Already Correctly Configured
+#### Auto-Detects Execution Environment
 
-No changes needed. The notebook already routes outputs to:
+The notebook automatically detects whether it's running locally or in Google Colab and routes outputs accordingly:
+
 ```python
-DATA_DIR = '/content/delapan-fantasy/MyDrive/dfs/data'
+# Cell 22 Configuration
+try:
+    from google.colab import drive
+    # Running in Colab - use Google Drive
+    DATA_DIR = '/content/delapan-fantasy/MyDrive/dfs/data'
+    IN_COLAB = True
+except ImportError:
+    # Running locally - use local data directory
+    DATA_DIR = str(Path.cwd().parent / 'data')
+    IN_COLAB = False
+
 OUTPUT_DIR = 'outputs'
-# Resolves to: {DATA_DIR}/outputs/
 ```
+
+#### Output Directory Routing
+
+**Local Execution** (standard Python):
+- `DATA_DIR` → `<parent_directory>/data`
+- `OUTPUT_DIR` → `outputs`
+- Final path: `data/outputs/` (same as backtest_season.ipynb)
+
+**Colab Execution** (Google Colab):
+- `DATA_DIR` → `/content/delapan-fantasy/MyDrive/dfs/data`
+- `OUTPUT_DIR` → `outputs`
+- Final path: `/content/delapan-fantasy/MyDrive/dfs/data/outputs/` (Google Drive)
 
 #### Output Directory Structure
 ```
@@ -76,9 +98,9 @@ OUTPUT_DIR = 'outputs'
 └── tier_comparison_{YYYYMMDD}_to_{YYYYMMDD}.csv  # Cell 42
 ```
 
-**Google Drive Path** (when mounted in Colab):
-- Base: `/content/delapan-fantasy/MyDrive/dfs/data/outputs/`
-- On Drive: `delapan-fantasy/dfs/data/outputs/`
+**Paths**:
+- Local: `C:\Users\antho\OneDrive\Documents\Repositories\delapan-fantasy\data\outputs\`
+- Colab (Drive): `/content/delapan-fantasy/MyDrive/dfs/data/outputs/`
 
 ## File Output Summary
 
@@ -102,14 +124,16 @@ OUTPUT_DIR = 'outputs'
 
 ## Environment-Specific Paths
 
-### Local Execution (backtest_season.ipynb)
+### Local Execution (Both Notebooks)
 ```
-Repository Root
+C:\Users\antho\OneDrive\Documents\Repositories\delapan-fantasy\
 └── data/
-    └── outputs/                    # All backtest outputs here
+    └── outputs/                    # Unified output location
         ├── backtest_results_*.csv
-        ├── summary_*.csv/txt
-        └── {TIMESTAMP}/
+        ├── summary_*.csv
+        ├── summary_*.txt           # backtest_season.ipynb only
+        ├── tier_comparison_*.csv   # colab_backtest.ipynb only
+        └── {TIMESTAMP}/            # Via WalkForwardBacktest
             ├── predictions/
             ├── inputs/
             ├── checkpoints/
@@ -124,7 +148,7 @@ Google Drive (mounted at /content/delapan-fantasy)
 └── MyDrive/
     └── dfs/
         └── data/
-            └── outputs/            # All backtest outputs here
+            └── outputs/            # Colab-specific outputs
                 ├── summary_*.csv
                 ├── tier_comparison_*.csv
                 └── {TIMESTAMP}/
@@ -135,6 +159,14 @@ Google Drive (mounted at /content/delapan-fantasy)
                     ├── performance_report.txt
                     └── performance_metrics.json
 ```
+
+### Execution Environment Detection
+
+| Scenario | Notebook | Detection | Output Location |
+|----------|----------|-----------|-----------------|
+| Local Python | backtest_season.ipynb | N/A | `data/outputs/` |
+| Local Python | colab_backtest.ipynb | ImportError (no google.colab) | `data/outputs/` |
+| Google Colab | colab_backtest.ipynb | google.colab import succeeds | `{Google Drive}/dfs/data/outputs/` |
 
 ## WalkForwardBacktest Integration
 
