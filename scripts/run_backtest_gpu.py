@@ -425,7 +425,6 @@ def main():
             logger.info("REPORT READY - Click to open:")
             logger.info(results['report_url'])
         elif 'report_path' in results:
-            from pathlib import Path
             report_file_url = Path(results['report_path']).absolute().as_uri()
             logger.info("REPORT READY - Click to open:")
             logger.info(report_file_url)
