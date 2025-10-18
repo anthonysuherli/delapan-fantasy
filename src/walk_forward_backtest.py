@@ -58,6 +58,11 @@ def _train_single_player_model(
 
     try:
         df = player_training_data.copy()
+
+        if 'gameDate' not in df.columns:
+            logger.debug(f"gameDate column missing for player {player_id}")
+            return None
+
         df['gameDate'] = pd.to_datetime(df['gameDate'], format='%Y%m%d', errors='coerce')
         df = df.sort_values(['playerID', 'gameDate'])
 
@@ -166,6 +171,14 @@ class WalkForwardBacktest:
         wmape_weight: str = 'actual_fpts',
         player_filters: Optional[List[PlayerFilter]] = None
     ):
+        # Validate date ranges
+        if train_start >= train_end:
+            raise ValueError(f"train_start ({train_start}) must be < train_end ({train_end})")
+        if test_start >= test_end:
+            raise ValueError(f"test_start ({test_start}) must be < test_end ({test_end})")
+        if train_end > test_start:
+            logger.warning(f"train_end ({train_end}) is after test_start ({test_start}). Training data will overlap with test window.")
+
         self.train_start = train_start
         self.train_end = train_end
         self.test_start = test_start
@@ -485,8 +498,18 @@ class WalkForwardBacktest:
             logger.info(f"Loaded {len(training_data_full)} training records")
             bench_metrics.num_samples = len(training_data_full)
 
+            if training_data_full.empty:
+                logger.error(f"No training data available for date range {self.train_start} to {self.train_end}")
+                return {'error': f'No training data found for range {self.train_start} to {self.train_end}'}
+
             logger.info("Building features for benchmark...")
             training_data_sorted = training_data_full.copy()
+
+            # Handle gameDate column safely
+            if 'gameDate' not in training_data_sorted.columns:
+                logger.error("gameDate column missing from training data")
+                return {'error': 'gameDate column missing from training data'}
+
             training_data_sorted['gameDate'] = pd.to_datetime(training_data_sorted['gameDate'], format='%Y%m%d', errors='coerce')
             training_data_sorted = training_data_sorted.sort_values(['playerID', 'gameDate'])
 
