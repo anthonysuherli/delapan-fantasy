@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 def _train_single_player_model(
     player_row: pd.Series,
     training_data: pd.DataFrame,
-    feature_pipeline: FeaturePipeline,
+    feature_config_name: str,
     model_type: str,
     model_params: Dict,
     min_player_games: int,
@@ -47,6 +47,9 @@ def _train_single_player_model(
     Worker function for parallel per-player model training.
 
     Returns dict with projection data or None if player should be skipped.
+
+    Note: Creates a fresh feature pipeline in each worker thread to avoid
+    thread safety issues with shared pipeline state.
     """
     player_id = player_row.get('playerID')
     player_name = player_row.get('longName')
@@ -57,6 +60,10 @@ def _train_single_player_model(
         return None
 
     try:
+        # Create fresh pipeline in this worker thread to avoid thread safety issues
+        config = load_feature_config(feature_config_name)
+        feature_pipeline = config.build_pipeline(FeaturePipeline)
+
         df = player_training_data.copy()
 
         if 'gameDate' not in df.columns:
@@ -86,12 +93,12 @@ def _train_single_player_model(
         feature_cols = [col for col in df.columns if col not in metadata_cols]
 
         X_train = df[feature_cols].copy()
-        X_train = X_train.fillna(0)
+        X_train = X_train.fillna(0).infer_objects(copy=False)
 
         # Convert any remaining object columns to numeric
         for col in X_train.columns:
             if X_train[col].dtype == 'object':
-                X_train[col] = pd.to_numeric(X_train[col], errors='coerce').fillna(0)
+                X_train[col] = pd.to_numeric(X_train[col], errors='coerce').fillna(0).infer_objects(copy=False)
 
         y_train = df['target']
 
@@ -169,7 +176,8 @@ class WalkForwardBacktest:
         minutes_threshold: int = 12,
         cmape_cap: float = 8.0,
         wmape_weight: str = 'actual_fpts',
-        player_filters: Optional[List[PlayerFilter]] = None
+        player_filters: Optional[List[PlayerFilter]] = None,
+        gpu_pipeline: Optional[Any] = None
     ):
         # Validate date ranges
         if train_start >= train_end:
@@ -202,6 +210,7 @@ class WalkForwardBacktest:
         self.cmape_cap = float(cmape_cap)
         self.wmape_weight = str(wmape_weight)
         self.player_filters = player_filters or []
+        self.gpu_pipeline = gpu_pipeline
 
         if data_dir:
             data_path = Path(data_dir)
@@ -323,12 +332,12 @@ class WalkForwardBacktest:
         feature_cols = [col for col in df.columns if col not in metadata_cols]
 
         X = df[feature_cols].copy()
-        X = X.fillna(0)
+        X = X.fillna(0).infer_objects(copy=False)
 
         # Convert any remaining object columns to numeric
         for col in X.columns:
             if X[col].dtype == 'object':
-                X[col] = pd.to_numeric(X[col], errors='coerce').fillna(0)
+                X[col] = pd.to_numeric(X[col], errors='coerce').fillna(0).infer_objects(copy=False)
 
         y = df['target']
 
@@ -377,7 +386,7 @@ class WalkForwardBacktest:
         # Convert any non-numeric feature columns to numeric
         for col in training_features.columns:
             if col not in metadata_cols and training_features[col].dtype == 'object':
-                training_features[col] = pd.to_numeric(training_features[col], errors='coerce').fillna(0)
+                training_features[col] = pd.to_numeric(training_features[col], errors='coerce').fillna(0).infer_objects(copy=False)
 
         all_features = []
 
@@ -637,7 +646,7 @@ class WalkForwardBacktest:
                 logger.info(f"Adding benchmark predictions...")
                 projections['benchmark_pred'] = projections['playerID'].map(
                     self.benchmark.player_averages
-                ).fillna(0)
+                ).fillna(0).infer_objects(copy=False)
                 has_benchmark = (projections['benchmark_pred'] > 0).sum()
                 logger.info(f"Benchmark predictions: {has_benchmark}/{len(projections)} players")
 
@@ -730,7 +739,9 @@ class WalkForwardBacktest:
             logger.info(f"Report generated: {report_path}")
             results['report_path'] = str(report_path)
         except Exception as e:
-            logger.error(f"Failed to generate report: {str(e)}")
+            logger.error(f"Failed to generate report: {str(e)}", exc_info=True)
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
 
         logger.info("="*80)
         logger.info("GENERATING PERFORMANCE REPORT")
@@ -794,7 +805,7 @@ class WalkForwardBacktest:
         metadata_cols = ['playerID', 'playerName', 'team', 'pos', 'salary']
         feature_cols = [col for col in slate_features.columns if col not in metadata_cols]
 
-        X = slate_features[feature_cols].fillna(0)
+        X = slate_features[feature_cols].fillna(0).infer_objects(copy=False)
 
         if hasattr(model, 'predict'):
             if hasattr(model, 'is_trained') and not model.is_trained:
@@ -887,9 +898,9 @@ class WalkForwardBacktest:
         if self.wmape_weight == 'actual_fpts':
             weights_series = merged['actual_fpts'].clip(lower=1.0)
         elif self.wmape_weight == 'actual_mins' and 'actual_mins' in merged.columns:
-            weights_series = merged['actual_mins'].fillna(0).clip(lower=1.0)
+            weights_series = merged['actual_mins'].fillna(0).infer_objects(copy=False).clip(lower=1.0)
         elif self.wmape_weight == 'expected_mins' and 'expected_mins' in merged.columns:
-            weights_series = merged['expected_mins'].fillna(0).clip(lower=1.0)
+            weights_series = merged['expected_mins'].fillna(0).infer_objects(copy=False).clip(lower=1.0)
         else:
             # Fallback
             weights_series = merged['actual_fpts'].clip(lower=1.0)
@@ -929,7 +940,7 @@ class WalkForwardBacktest:
         # Minutes-based filtering (use expected_mins if present, else actual_mins)
         minute_col = 'expected_mins' if 'expected_mins' in merged.columns else 'actual_mins' if 'actual_mins' in merged.columns else None
         if minute_col is not None:
-            filt_mask = merged[minute_col].fillna(0) >= self.minutes_threshold
+            filt_mask = merged[minute_col].fillna(0).infer_objects(copy=False) >= self.minutes_threshold
         else:
             filt_mask = pd.Series([True] * len(merged))
 
@@ -1022,141 +1033,146 @@ class WalkForwardBacktest:
             logger.info(f"Reusing cached player models from {self.last_training_date}")
 
         per_player_start_time = time.perf_counter()
-        per_player_profiler_metrics = self.profiler.track("per_player_model_generation", num_samples=total_players, date=test_date, per_player=self.per_player_models).__enter__()
 
-        if should_recalibrate and self.n_jobs != 1:
-            logger.info(f"Training models in parallel with {self.n_jobs} workers")
+        with self.profiler.track("per_player_model_generation", num_samples=total_players, date=test_date, per_player=self.per_player_models):
+            if should_recalibrate and self.n_jobs != 1:
+                logger.info(f"Training models in parallel with {self.n_jobs} workers")
 
-            player_rows = [row for _, row in salaries_df.iterrows()]
-            injuries_data = slate_data.get('injuries', pd.DataFrame())
+                player_rows = [row for _, row in salaries_df.iterrows()]
+                injuries_data = slate_data.get('injuries', pd.DataFrame())
 
-            results = Parallel(n_jobs=self.n_jobs, verbose=10)(
-                delayed(_train_single_player_model)(
-                    player_row,
-                    training_data,
-                    self.feature_pipeline,
-                    self.model_type,
-                    self.model_params,
-                    self.min_player_games,
-                    self.save_models,
-                    models_dir,
-                    self.run_inputs_dir,
-                    injuries_data
+                # Use threading backend for better interrupt handling on Windows
+                # Set timeout to prevent hung workers
+                results = Parallel(
+                    n_jobs=self.n_jobs,
+                    verbose=10,
+                    backend='threading',
+                    timeout=600  # 10 minute timeout per worker
+                )(
+                    delayed(_train_single_player_model)(
+                        player_row,
+                        training_data,
+                        self.feature_config_name,
+                        self.model_type,
+                        self.model_params,
+                        self.min_player_games,
+                        self.save_models,
+                        models_dir,
+                        self.run_inputs_dir,
+                        injuries_data
+                    )
+                    for player_row in player_rows
                 )
-                for player_row in player_rows
-            )
 
-            for result in results:
-                if result is not None:
-                    player_id = result['playerID']
-                    model = result.pop('model')
+                for result in results:
+                    if result is not None:
+                        player_id = result['playerID']
+                        model = result.pop('model')
 
-                    if model is not None:
-                        self.player_models[player_id] = model
-                        models_trained += 1
+                        if model is not None:
+                            self.player_models[player_id] = model
+                            models_trained += 1
 
-                        if self.save_models:
-                            player_name = result['playerName']
+                            if self.save_models:
+                                player_name = result['playerName']
+                                safe_player_name = "".join(c if c.isalnum() or c in (' ', '_', '-') else '_' for c in player_name)
+                                safe_player_name = safe_player_name.replace(' ', '_')
+                                model_file = models_dir / f"{safe_player_name}_{player_id}.pkl"
+
+                                if hasattr(model, 'save'):
+                                    self._save_model(model, model_file, player_name, player_id, 0)
+
+                        all_projections.append(pd.DataFrame([result]))
+                        players_with_models += 1
+
+                logger.info(f"Parallel training complete: {models_trained} models trained")
+
+            else:
+                model_train_times = []
+                log_interval = max(1, total_players // 10)
+
+                for idx, player_row in tqdm(salaries_df.iterrows(), total=len(salaries_df), desc="Per-player models", leave=False):
+                    player_id = player_row.get('playerID')
+                    player_name = player_row.get('longName')
+                    logger.debug(f"Processing {player_name} ({player_id}) for {test_date}")
+
+                    player_training_data = training_data[training_data['playerID'] == player_id].copy()
+
+                    if len(player_training_data) < self.min_player_games:
+                        logger.debug(f"Skipping {player_name}: only {len(player_training_data)} games (need {self.min_player_games})")
+                        continue
+
+                    try:
+                        if should_recalibrate or player_id not in self.player_models:
+                            model_start_time = time.perf_counter()
+
+                            injuries_data = slate_data.get('injuries', pd.DataFrame())
+                            X_train, y_train = self._build_training_features(player_training_data, injuries_data)
+
+                            if X_train.empty or y_train.empty or len(X_train) < 3:
+                                logger.debug(f"Insufficient features for {player_name}")
+                                continue
+
                             safe_player_name = "".join(c if c.isalnum() or c in (' ', '_', '-') else '_' for c in player_name)
                             safe_player_name = safe_player_name.replace(' ', '_')
+
+                            input_file = self.run_inputs_dir / f"player_{safe_player_name}_{player_id}_inputs.parquet"
+
+                            model = self._train_model(
+                                X_train,
+                                y_train,
+                                save_inputs=True,
+                                input_save_path=str(input_file)
+                            )
+                            self.player_models[player_id] = model
+                            models_trained += 1
+
+                            model_elapsed = time.perf_counter() - model_start_time
+                            model_train_times.append(model_elapsed)
+
+                            if models_trained % log_interval == 0:
+                                avg_model_time = sum(model_train_times) / len(model_train_times)
+                                models_per_sec = 1 / avg_model_time if avg_model_time > 0 else 0
+                                remaining_models = total_players - (idx + 1)
+                                eta_models = remaining_models * avg_model_time
+                                logger.info(f"  Progress: {models_trained} models trained ({models_trained/total_players*100:.1f}%) - {models_per_sec:.2f} models/sec - ETA: {self._format_time(eta_models)}")
+
                             model_file = models_dir / f"{safe_player_name}_{player_id}.pkl"
 
                             if hasattr(model, 'save'):
-                                self._save_model(model, model_file, player_name, player_id, 0)
+                                self._save_model(model, model_file, player_name, player_id, len(X_train))
+                                logger.debug(f"Saved model for {player_name} to {model_file}")
+                                logger.debug(f"Saved training inputs to {input_file}")
+                        else:
+                            model = self.player_models[player_id]
+                            models_reused += 1
+                            logger.debug(f"Reusing cached model for {player_name}")
 
-                    all_projections.append(pd.DataFrame([result]))
-                    players_with_models += 1
+                        slate_data_single = {
+                            'dfs_salaries': salaries_df.iloc[[idx]],
+                            'date': slate_data['date'],
+                            'schedule': slate_data.get('schedule', pd.DataFrame()),
+                            'betting_odds': slate_data.get('betting_odds', pd.DataFrame()),
+                            'injuries': slate_data.get('injuries', pd.DataFrame())
+                        }
 
-            logger.info(f"Parallel training complete: {models_trained} models trained")
+                        slate_features = self._build_slate_features(slate_data_single, player_training_data)
 
-        else:
-            model_train_times = []
-            log_interval = max(1, total_players // 10)
-
-            for idx, player_row in tqdm(salaries_df.iterrows(), total=len(salaries_df), desc="Per-player models", leave=False):
-                player_id = player_row.get('playerID')
-                player_name = player_row.get('longName')
-                logger.debug(f"Processing {player_name} ({player_id}) for {test_date}")
-
-                player_training_data = training_data[training_data['playerID'] == player_id].copy()
-
-                if len(player_training_data) < self.min_player_games:
-                    logger.debug(f"Skipping {player_name}: only {len(player_training_data)} games (need {self.min_player_games})")
-                    continue
-
-                try:
-                    if should_recalibrate or player_id not in self.player_models:
-                        model_start_time = time.perf_counter()
-
-                        injuries_data = slate_data.get('injuries', pd.DataFrame())
-                        X_train, y_train = self._build_training_features(player_training_data, injuries_data)
-
-                        if X_train.empty or y_train.empty or len(X_train) < 3:
-                            logger.debug(f"Insufficient features for {player_name}")
+                        if slate_features.empty:
+                            logger.debug(f"No features generated for {player_name}")
                             continue
 
-                        safe_player_name = "".join(c if c.isalnum() or c in (' ', '_', '-') else '_' for c in player_name)
-                        safe_player_name = safe_player_name.replace(' ', '_')
+                        projection = self._generate_projections(model, slate_features)
+                        all_projections.append(projection)
+                        players_with_models += 1
 
-                        input_file = self.run_inputs_dir / f"player_{safe_player_name}_{player_id}_inputs.parquet"
-
-                        model = self._train_model(
-                            X_train,
-                            y_train,
-                            save_inputs=True,
-                            input_save_path=str(input_file)
-                        )
-                        self.player_models[player_id] = model
-                        models_trained += 1
-
-                        model_elapsed = time.perf_counter() - model_start_time
-                        model_train_times.append(model_elapsed)
-
-                        if models_trained % log_interval == 0:
-                            avg_model_time = sum(model_train_times) / len(model_train_times)
-                            models_per_sec = 1 / avg_model_time if avg_model_time > 0 else 0
-                            remaining_models = total_players - (idx + 1)
-                            eta_models = remaining_models * avg_model_time
-                            logger.info(f"  Progress: {models_trained} models trained ({models_trained/total_players*100:.1f}%) - {models_per_sec:.2f} models/sec - ETA: {self._format_time(eta_models)}")
-
-                        model_file = models_dir / f"{safe_player_name}_{player_id}.pkl"
-
-                        if hasattr(model, 'save'):
-                            self._save_model(model, model_file, player_name, player_id, len(X_train))
-                            logger.debug(f"Saved model for {player_name} to {model_file}")
-                            logger.debug(f"Saved training inputs to {input_file}")
-                    else:
-                        model = self.player_models[player_id]
-                        models_reused += 1
-                        logger.debug(f"Reusing cached model for {player_name}")
-
-                    slate_data_single = {
-                        'dfs_salaries': salaries_df.iloc[[idx]],
-                        'date': slate_data['date'],
-                        'schedule': slate_data.get('schedule', pd.DataFrame()),
-                        'betting_odds': slate_data.get('betting_odds', pd.DataFrame()),
-                        'injuries': slate_data.get('injuries', pd.DataFrame())
-                    }
-
-                    slate_features = self._build_slate_features(slate_data_single, player_training_data)
-
-                    if slate_features.empty:
-                        logger.debug(f"No features generated for {player_name}")
+                    except Exception as e:
+                        logger.warning(f"Error generating projection for {player_name}: {str(e)}")
                         continue
 
-                    projection = self._generate_projections(model, slate_features)
-                    all_projections.append(projection)
-                    players_with_models += 1
-
-                except Exception as e:
-                    logger.warning(f"Error generating projection for {player_name}: {str(e)}")
-                    continue
-
-            if model_train_times:
-                avg_train_time = sum(model_train_times) / len(model_train_times)
-                logger.info(f"Average model training time: {self._format_time(avg_train_time)} ({1/avg_train_time:.2f} models/sec)")
-
-        self.profiler.track("per_player_model_generation").__exit__(None, None, None)
+                if model_train_times:
+                    avg_train_time = sum(model_train_times) / len(model_train_times)
+                    logger.info(f"Average model training time: {self._format_time(avg_train_time)} ({1/avg_train_time:.2f} models/sec)")
 
         if should_recalibrate:
             self.last_training_date = test_date
@@ -1461,7 +1477,7 @@ class WalkForwardBacktest:
             if not all_preds.empty:
                 minute_col = 'expected_mins' if 'expected_mins' in all_preds.columns else 'actual_mins' if 'actual_mins' in all_preds.columns else None
                 if minute_col is not None:
-                    mask_lm = all_preds[minute_col].fillna(0) < self.minutes_threshold
+                    mask_lm = all_preds[minute_col].fillna(0).infer_objects(copy=False) < self.minutes_threshold
                     if mask_lm.any():
                         y_true_lm = all_preds.loc[mask_lm, 'actual_fpts'].values
                         y_pred_lm = all_preds.loc[mask_lm, 'projected_fpts'].values
@@ -1469,9 +1485,9 @@ class WalkForwardBacktest:
                         if self.wmape_weight == 'actual_fpts':
                             weights_lm = np.maximum(all_preds.loc[mask_lm, 'actual_fpts'].values, 1.0)
                         elif self.wmape_weight == 'actual_mins' and 'actual_mins' in all_preds.columns:
-                            weights_lm = np.maximum(all_preds.loc[mask_lm, 'actual_mins'].fillna(0).values, 1.0)
+                            weights_lm = np.maximum(all_preds.loc[mask_lm, 'actual_mins'].fillna(0).infer_objects(copy=False).values, 1.0)
                         elif self.wmape_weight == 'expected_mins' and 'expected_mins' in all_preds.columns:
-                            weights_lm = np.maximum(all_preds.loc[mask_lm, 'expected_mins'].fillna(0).values, 1.0)
+                            weights_lm = np.maximum(all_preds.loc[mask_lm, 'expected_mins'].fillna(0).infer_objects(copy=False).values, 1.0)
 
                         low_minutes_metrics = {
                             'count': int(mask_lm.sum()),
