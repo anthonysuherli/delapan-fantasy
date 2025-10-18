@@ -891,7 +891,6 @@ class WalkForwardBacktest:
             logger.info(f"PDF-styled report generated: {pdf_report_path}")
 
             # Create clickable file:// URL for easy access
-            from pathlib import Path
             import urllib.parse
             report_file_url = Path(pdf_report_path).absolute().as_uri()
             logger.info("")
