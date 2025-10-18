@@ -60,6 +60,28 @@ class PlotlyBacktestVisualizer:
             }
         }
 
+    def _apply_dark_theme(self, fig, height: int = 600):
+        """Apply dark theme to a Plotly figure."""
+        fig.update_layout(
+            **self.dark_template['layout'],
+            height=height,
+            hovermode='closest'
+        )
+
+        # Update all axes with dark theme
+        fig.update_xaxes(
+            gridcolor=self.dark_template['layout']['xaxis']['gridcolor'],
+            linecolor=self.dark_template['layout']['xaxis']['linecolor'],
+            tickfont=dict(color=self.dark_template['layout']['xaxis']['tickfont']['color'])
+        )
+        fig.update_yaxes(
+            gridcolor=self.dark_template['layout']['yaxis']['gridcolor'],
+            linecolor=self.dark_template['layout']['yaxis']['linecolor'],
+            tickfont=dict(color=self.dark_template['layout']['yaxis']['tickfont']['color'])
+        )
+
+        return fig
+
     def generate_all_charts(self, results: Dict[str, Any]) -> Dict[str, Path]:
         """
         Generate all interactive visualization charts.
@@ -170,6 +192,7 @@ class PlotlyBacktestVisualizer:
         )
 
         output_path = self.charts_dir / 'daily_performance.html'
+        self._apply_dark_theme(fig)
         fig.write_html(output_path)
 
         return output_path
@@ -283,6 +306,7 @@ class PlotlyBacktestVisualizer:
         )
 
         output_path = self.charts_dir / 'model_vs_benchmark_dashboard.html'
+        self._apply_dark_theme(fig)
         fig.write_html(output_path)
 
         return output_path
@@ -371,6 +395,7 @@ class PlotlyBacktestVisualizer:
         )
 
         output_path = self.charts_dir / 'error_analysis_dashboard.html'
+        self._apply_dark_theme(fig)
         fig.write_html(output_path)
 
         return output_path
@@ -440,6 +465,7 @@ class PlotlyBacktestVisualizer:
         )
 
         output_path = self.charts_dir / 'salary_tier_analysis.html'
+        self._apply_dark_theme(fig)
         fig.write_html(output_path)
 
         return output_path
@@ -505,6 +531,7 @@ class PlotlyBacktestVisualizer:
         )
 
         output_path = self.charts_dir / 'correlation_analysis.html'
+        self._apply_dark_theme(fig)
         fig.write_html(output_path)
 
         return output_path
@@ -579,6 +606,7 @@ class PlotlyBacktestVisualizer:
         )
 
         output_path = self.charts_dir / 'position_analysis.html'
+        self._apply_dark_theme(fig)
         fig.write_html(output_path)
 
         return output_path
@@ -633,6 +661,7 @@ class PlotlyBacktestVisualizer:
         )
 
         output_path = self.charts_dir / 'minutes_analysis.html'
+        self._apply_dark_theme(fig)
         fig.write_html(output_path)
 
         return output_path
@@ -685,6 +714,7 @@ class PlotlyBacktestVisualizer:
         )
 
         output_path = self.charts_dir / 'team_analysis.html'
+        self._apply_dark_theme(fig)
         fig.write_html(output_path)
 
         return output_path
@@ -746,6 +776,7 @@ class PlotlyBacktestVisualizer:
         )
 
         output_path = self.charts_dir / 'residual_analysis.html'
+        self._apply_dark_theme(fig)
         fig.write_html(output_path)
 
         return output_path
@@ -817,6 +848,7 @@ class PlotlyBacktestVisualizer:
         )
 
         output_path = self.charts_dir / 'statistical_tests.html'
+        self._apply_dark_theme(fig)
         fig.write_html(output_path)
 
         return output_path
@@ -880,6 +912,7 @@ class PlotlyBacktestVisualizer:
         )
 
         output_path = self.charts_dir / 'calibration_curve.html'
+        self._apply_dark_theme(fig)
         fig.write_html(output_path)
 
         return output_path
@@ -922,6 +955,7 @@ class PlotlyBacktestVisualizer:
         )
 
         output_path = self.charts_dir / 'error_heatmap.html'
+        self._apply_dark_theme(fig)
         fig.write_html(output_path)
 
         return output_path
@@ -1062,6 +1096,7 @@ class PlotlyBacktestVisualizer:
         )
 
         output_path = self.charts_dir / 'comprehensive_dashboard.html'
+        self._apply_dark_theme(fig)
         fig.write_html(output_path)
 
         return output_path

@@ -19,6 +19,7 @@ from src.utils.fantasy_points import calculate_dk_fantasy_points
 from src.features.pipeline import FeaturePipeline
 from src.utils.feature_config import load_feature_config
 from src.evaluation.report_generator import BacktestReportGenerator
+from src.evaluation.pdf_report_generator import PDFStyleBacktestReportGenerator
 from src.evaluation.performance_profiler import PerformanceProfiler
 from src.filters.base import PlayerFilter
 from src.config.paths import (
@@ -861,22 +862,52 @@ class WalkForwardBacktest:
         results = self._aggregate_results()
 
         logger.info("="*80)
-        logger.info("GENERATING COMPREHENSIVE REPORT")
+        logger.info("GENERATING COMPREHENSIVE REPORTS")
         logger.info("="*80)
 
+        # Generate charts first
+        chart_paths = {}
         try:
-            report_generator = BacktestReportGenerator(self.run_output_dir)
-            report_path = report_generator.generate_report(
-                results=results,
-                config=self.config,
-                run_timestamp=self.run_timestamp
-            )
-            logger.info(f"Report generated: {report_path}")
-            results['report_path'] = str(report_path)
+            from src.evaluation.plotly_visualizations import PlotlyBacktestVisualizer
+            logger.info("Generating dark-themed interactive charts...")
+            visualizer = PlotlyBacktestVisualizer(self.run_output_dir)
+            chart_paths = visualizer.generate_all_charts(results)
+            logger.info(f"Generated {len(chart_paths)} interactive charts")
         except Exception as e:
-            logger.error(f"Failed to generate report: {str(e)}", exc_info=True)
+            logger.error(f"Failed to generate charts: {str(e)}", exc_info=True)
             import traceback
             logger.error(f"Traceback: {traceback.format_exc()}")
+
+        # Generate PDF-styled report
+        try:
+            logger.info("Generating PDF-styled report with analysis...")
+            pdf_report_generator = PDFStyleBacktestReportGenerator(self.run_output_dir)
+            pdf_report_path = pdf_report_generator.generate_report(
+                results=results,
+                config=self.config,
+                run_timestamp=self.run_timestamp,
+                chart_paths=chart_paths
+            )
+            logger.info(f"PDF-styled report generated: {pdf_report_path}")
+            results['report_path'] = str(pdf_report_path)
+        except Exception as e:
+            logger.error(f"Failed to generate PDF report: {str(e)}", exc_info=True)
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+
+            # Fallback to legacy report
+            try:
+                logger.info("Falling back to legacy report generator...")
+                report_generator = BacktestReportGenerator(self.run_output_dir)
+                report_path = report_generator.generate_report(
+                    results=results,
+                    config=self.config,
+                    run_timestamp=self.run_timestamp
+                )
+                logger.info(f"Legacy report generated: {report_path}")
+                results['report_path'] = str(report_path)
+            except Exception as e2:
+                logger.error(f"Failed to generate legacy report: {str(e2)}", exc_info=True)
 
         logger.info("="*80)
         logger.info("GENERATING PERFORMANCE REPORT")
