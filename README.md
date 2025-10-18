@@ -409,6 +409,30 @@ python scripts/build_historical_game_logs.py
 
 Edit script to configure date range before running.
 
+### Backtest Interface (Streamlit)
+
+An interactive Streamlit UI is available to explore configurations and stream
+walk-forward backtest progress. The layout mirrors the operational workflow:
+
+1. **Control Panel (sidebar):** Choose experiment YAML files, override database
+   paths, and define training/testing windows before launching a run.
+2. **Results Panel (main view):** Streams backtest metrics and slate-level
+   summaries as they are produced and offers a "Training Input Sample" tab to
+   inspect the engineered features used for model fitting.
+3. **Log Panel (bottom dock):** Continuously mirrors log output from the
+   backtest engine for real-time visibility into progress and potential
+   warnings.
+
+Launch the interface from the project root:
+
+```bash
+streamlit run src/interface/backtest_app.py
+```
+
+The runner executes the existing `WalkForwardBacktest` pipeline, so ensure the
+SQLite database and configuration paths referenced in the control panel are
+available before starting a session.
+
 ## Notebooks
 
 ### backtest_1d_by_player.ipynb
