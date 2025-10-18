@@ -28,11 +28,36 @@ class PlotlyBacktestVisualizer:
         self.charts_dir.mkdir(parents=True, exist_ok=True)
 
         self.color_palette = {
-            'model': '#2E86AB',
-            'benchmark': '#A23B72',
-            'positive': '#06A77D',
-            'negative': '#D62828',
-            'neutral': '#F77F00'
+            'model': '#58a6ff',
+            'benchmark': '#f778ba',
+            'positive': '#3fb950',
+            'negative': '#f85149',
+            'neutral': '#d29922'
+        }
+
+        # Dark theme template for all charts
+        self.dark_template = {
+            'layout': {
+                'paper_bgcolor': '#0d1117',
+                'plot_bgcolor': '#0d1117',
+                'font': {'color': '#c9d1d9', 'family': 'Segoe UI, system-ui, sans-serif'},
+                'title': {'font': {'color': '#f0f6fc', 'size': 18}},
+                'xaxis': {
+                    'gridcolor': '#30363d',
+                    'linecolor': '#30363d',
+                    'tickfont': {'color': '#8b949e'}
+                },
+                'yaxis': {
+                    'gridcolor': '#30363d',
+                    'linecolor': '#30363d',
+                    'tickfont': {'color': '#8b949e'}
+                },
+                'legend': {
+                    'bgcolor': '#161b22',
+                    'bordercolor': '#30363d',
+                    'font': {'color': '#c9d1d9'}
+                }
+            }
         }
 
     def generate_all_charts(self, results: Dict[str, Any]) -> Dict[str, Path]:

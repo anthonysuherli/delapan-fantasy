@@ -29,7 +29,7 @@ from src.utils.feature_config import load_feature_config
 
 def optimize_single_player(player_id, player_data, feature_cols, param_bounds, cv_folds, n_iterations, n_initial_points, early_stopping_rounds):
     """Optimize hyperparameters for a single player."""
-    X_player = player_data[feature_cols].fillna(0)
+    X_player = player_data[feature_cols].fillna(0).infer_objects(copy=False)
     y_player = player_data['target']
 
     try:
@@ -186,7 +186,7 @@ def main():
         if col not in metadata_cols and df[col].dtype in ['int64', 'float64', 'bool']
     ]
 
-    X_train = df[feature_cols].fillna(0)
+    X_train = df[feature_cols].fillna(0).infer_objects(copy=False)
     y_train = df['target']
 
     print(f"Training data shape: {X_train.shape}")

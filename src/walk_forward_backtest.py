@@ -177,7 +177,9 @@ class WalkForwardBacktest:
         cmape_cap: float = 8.0,
         wmape_weight: str = 'actual_fpts',
         player_filters: Optional[List[PlayerFilter]] = None,
-        gpu_pipeline: Optional[Any] = None
+        gpu_pipeline: Optional[Any] = None,
+        enable_feature_caching: bool = True,
+        gpu_batch_size: int = 8
     ):
         # Validate date ranges
         if train_start >= train_end:
@@ -211,6 +213,34 @@ class WalkForwardBacktest:
         self.wmape_weight = str(wmape_weight)
         self.player_filters = player_filters or []
         self.gpu_pipeline = gpu_pipeline
+        self.enable_feature_caching = enable_feature_caching
+        self.gpu_batch_size = gpu_batch_size
+        
+        # Feature and data caching
+        self.feature_cache = {}
+        self.training_data_cache = None
+        self.training_features_cache = None
+        self.cache_stats = {
+            'feature_cache_hits': 0,
+            'feature_cache_misses': 0,
+            'training_data_loads': 0
+        }
+        
+        # GPU batch trainer for optimized per-player model training
+        self.gpu_batch_trainer = None
+        if per_player_models and gpu_batch_size > 1:
+            try:
+                from src.models.gpu_batch_trainer import GPUBatchTrainer
+                gpu_device = model_params.get('device', 'cuda:0') if model_params else 'cuda:0'
+                self.gpu_batch_trainer = GPUBatchTrainer(
+                    batch_size=gpu_batch_size,
+                    gpu_device=gpu_device,
+                    max_workers=min(gpu_batch_size, 4)
+                )
+                logger.info(f"Initialized GPU batch trainer: batch_size={gpu_batch_size}, device={gpu_device}")
+            except ImportError:
+                logger.warning("GPU batch trainer not available, falling back to sequential training")
+                self.gpu_batch_trainer = None
 
         if data_dir:
             data_path = Path(data_dir)
@@ -342,6 +372,87 @@ class WalkForwardBacktest:
         y = df['target']
 
         return X, y
+
+    def _build_training_features_cached(
+        self,
+        training_data: pd.DataFrame,
+        injuries: Optional[pd.DataFrame] = None
+    ) -> Tuple[pd.DataFrame, pd.Series]:
+        """
+        Build training features with caching to avoid redundant computation.
+        
+        Caches based on data size, date range, and injury data hash.
+        """
+        if not self.enable_feature_caching:
+            return self._build_training_features(training_data, injuries)
+        
+        # Create cache key based on training data characteristics
+        data_hash = hash((
+            len(training_data),
+            training_data['gameDate'].min() if 'gameDate' in training_data.columns else '',
+            training_data['gameDate'].max() if 'gameDate' in training_data.columns else '',
+            len(injuries) if injuries is not None and not injuries.empty else 0,
+            self.feature_config_name
+        ))
+        
+        cache_key = f"training_features_{data_hash}"
+        
+        # Check cache
+        if cache_key in self.feature_cache:
+            logger.debug(f"Feature cache hit: {cache_key}")
+            self.cache_stats['feature_cache_hits'] += 1
+            return self.feature_cache[cache_key]
+        
+        # Cache miss - compute features
+        logger.debug(f"Feature cache miss: {cache_key} - computing features")
+        self.cache_stats['feature_cache_misses'] += 1
+        
+        X, y = self._build_training_features(training_data, injuries)
+        
+        # Cache the result
+        self.feature_cache[cache_key] = (X.copy(), y.copy())
+        logger.info(f"Cached features for {len(X)} samples (cache size: {len(self.feature_cache)})")
+        
+        return X, y
+
+    def _load_training_data_cached(self) -> pd.DataFrame:
+        """
+        Load training data once and cache for reuse across slates.
+        """
+        if self.training_data_cache is None:
+            logger.info("Loading training data (one-time operation)")
+            start_time = time.perf_counter()
+            
+            self.training_data_cache = self.loader.load_historical_player_logs(
+                start_date=self.train_start,
+                end_date=self.train_end,
+                num_seasons=self.num_seasons
+            )
+            
+            load_time = time.perf_counter() - start_time
+            self.cache_stats['training_data_loads'] += 1
+            
+            logger.info(f"Cached {len(self.training_data_cache)} training records in {load_time:.2f}s")
+            logger.info(f"Training data date range: {self.training_data_cache['gameDate'].min()} to {self.training_data_cache['gameDate'].max()}")
+        
+        return self.training_data_cache
+
+    def _log_cache_stats(self):
+        """
+        Log caching performance statistics.
+        """
+        total_feature_requests = self.cache_stats['feature_cache_hits'] + self.cache_stats['feature_cache_misses']
+        hit_rate = (self.cache_stats['feature_cache_hits'] / total_feature_requests * 100) if total_feature_requests > 0 else 0
+        
+        logger.info("="*80)
+        logger.info("CACHING PERFORMANCE STATISTICS")
+        logger.info("="*80)
+        logger.info(f"Feature cache hits: {self.cache_stats['feature_cache_hits']}")
+        logger.info(f"Feature cache misses: {self.cache_stats['feature_cache_misses']}")
+        logger.info(f"Feature cache hit rate: {hit_rate:.1f}%")
+        logger.info(f"Training data loads: {self.cache_stats['training_data_loads']}")
+        logger.info(f"Active cache entries: {len(self.feature_cache)}")
+        logger.info("="*80)
 
     def _build_slate_features(
         self,
@@ -577,18 +688,38 @@ class WalkForwardBacktest:
                 logger.warning(f"No salary data for {test_date}, skipping")
                 continue
 
-            training_data = self.loader.load_historical_player_logs(
-                start_date=self.train_start,
-                end_date=self.train_end,
-                num_seasons=self.num_seasons
-            )
+            training_data = self._load_training_data_cached()
 
             if self.per_player_models:
-                projections = self._generate_per_player_projections(
-                    slate_data,
-                    training_data,
-                    test_date
-                )
+                # Use GPU batch training if available, otherwise fallback to sequential
+                if self.gpu_batch_trainer is not None:
+                    try:
+                        logger.info("Attempting GPU batch training for per-player models")
+                        projections = self._generate_per_player_projections_gpu_batch(
+                            slate_data,
+                            training_data,
+                            test_date
+                        )
+                        
+                        # Check if GPU batch training returned valid results
+                        if projections.empty:
+                            logger.warning("GPU batch training returned no results, falling back to sequential")
+                            raise RuntimeError("GPU batch training produced no results")
+                            
+                    except Exception as e:
+                        logger.error(f"GPU batch training failed: {str(e)}")
+                        logger.info("Falling back to sequential per-player model training")
+                        projections = self._generate_per_player_projections(
+                            slate_data,
+                            training_data,
+                            test_date
+                        )
+                else:
+                    projections = self._generate_per_player_projections(
+                        slate_data,
+                        training_data,
+                        test_date
+                    )
 
             else:
                 should_train = self._should_recalibrate(test_date)
@@ -597,7 +728,7 @@ class WalkForwardBacktest:
                     injuries_data = slate_data.get('injuries', pd.DataFrame())
 
                     with self.profiler.track("feature_engineering", num_samples=len(training_data), date=test_date):
-                        X_train, y_train = self._build_training_features(training_data, injuries_data)
+                        X_train, y_train = self._build_training_features_cached(training_data, injuries_data)
 
                     if X_train.empty or y_train.empty:
                         logger.warning(f"Feature generation failed for {test_date}")
@@ -720,6 +851,10 @@ class WalkForwardBacktest:
 
         backtest_elapsed = time.perf_counter() - backtest_start_time
         logger.info(f"Total backtest time: {self._format_time(backtest_elapsed)}")
+
+        # Log caching performance statistics
+        if self.enable_feature_caching:
+            self._log_cache_stats()
 
         self.profiler.end_backtest()
 
@@ -1187,6 +1322,158 @@ class WalkForwardBacktest:
         logger.info(f"Generated projections for {players_with_models}/{total_players} players in {self._format_time(per_player_elapsed)}")
         logger.info(f"Models trained: {models_trained}, reused: {models_reused}")
 
+        return projections_df
+
+    def _generate_per_player_projections_gpu_batch(
+        self,
+        slate_data: Dict[str, Any],
+        training_data: pd.DataFrame,
+        test_date: str
+    ) -> pd.DataFrame:
+        """
+        Generate per-player model projections using GPU batch training.
+        
+        This method optimizes GPU utilization by training multiple models
+        simultaneously and using cached features.
+        """
+        logger.info("Generating per-player model projections with GPU batch training")
+        
+        salaries_df = slate_data['dfs_salaries'].copy()
+        
+        # Add injury features for filtering
+        injuries_data = slate_data.get('injuries', pd.DataFrame())
+        if not injuries_data.empty:
+            from src.features.transformers.injury import InjuryTransformer
+            injury_transformer = InjuryTransformer()
+            injury_transformer.fit(salaries_df)
+            salaries_df = injury_transformer.transform(salaries_df, injuries_data)
+            logger.info(f"Added injury features to {len(salaries_df)} players for filtering")
+        
+        # Apply player filters
+        if self.player_filters:
+            logger.info(f"Applying {len(self.player_filters)} player filters...")
+            initial_count = len(salaries_df)
+            for pf in self.player_filters:
+                salaries_df = pf.apply(salaries_df)
+                logger.info(f"  Applied {pf}: {len(salaries_df)} players remaining")
+            logger.info(f"Filter results: {len(salaries_df)}/{initial_count} players passed all filters")
+            salaries_df = salaries_df.reset_index(drop=True)
+        
+        total_players = len(salaries_df)
+        should_recalibrate = self._should_recalibrate(test_date)
+        
+        models_dir = Path(PER_PLAYER_MODEL_DIR)
+        models_dir.mkdir(parents=True, exist_ok=True)
+        
+        logger.info(f"Processing {total_players} players with GPU batch training")
+        
+        # Prepare training batches
+        training_batches = []
+        batch_data = []
+        
+        with self.profiler.track("gpu_batch_preparation", num_samples=total_players, date=test_date):
+            for idx, player_row in salaries_df.iterrows():
+                player_id = player_row.get('playerID')
+                player_name = player_row.get('longName')
+                
+                # Get player-specific training data
+                player_training_data = training_data[training_data['playerID'] == player_id].copy()
+                
+                if len(player_training_data) < self.min_player_games:
+                    logger.debug(f"Skipping {player_name}: only {len(player_training_data)} games")
+                    continue
+                
+                try:
+                    # Build features for this player (using cache if available)
+                    X_train, y_train = self._build_training_features_cached(player_training_data, injuries_data)
+                    
+                    if X_train.empty or y_train.empty or len(X_train) < 3:
+                        logger.debug(f"Insufficient features for {player_name}")
+                        continue
+                    
+                    # Add to batch
+                    batch_item = {
+                        'player_id': player_id,
+                        'player_name': player_name,
+                        'X_train': X_train,
+                        'y_train': y_train,
+                        'metadata': {
+                            'salary': player_row.get('salary', 0),
+                            'team': player_row.get('team', ''),
+                            'pos': player_row.get('pos', '')
+                        }
+                    }
+                    
+                    batch_data.append(batch_item)
+                    
+                    # When batch is full, add to training batches
+                    if len(batch_data) >= self.gpu_batch_size:
+                        training_batches.append(batch_data)
+                        batch_data = []
+                        
+                except Exception as e:
+                    logger.warning(f"Error preparing {player_name} for batch training: {str(e)}")
+                    continue
+            
+            # Add remaining players as final batch
+            if batch_data:
+                training_batches.append(batch_data)
+        
+        logger.info(f"Prepared {len(training_batches)} batches for GPU training (avg {len(batch_data) if training_batches else 0:.1f} players per batch)")
+        
+        # Train models in batches
+        all_results = []
+        total_batches = len(training_batches)
+        
+        with self.profiler.track("gpu_batch_training", num_samples=total_players, date=test_date, per_player=True):
+            for batch_idx, batch in enumerate(training_batches, 1):
+                logger.info(f"Training batch {batch_idx}/{total_batches} ({len(batch)} players)")
+                
+                batch_results = self.gpu_batch_trainer.train_batch(
+                    batch,
+                    self.model_params,
+                    save_models=self.save_models,
+                    models_dir=models_dir
+                )
+                
+                all_results.extend(batch_results)
+                
+                logger.info(f"Batch {batch_idx} completed: {len(batch_results)}/{len(batch)} successful")
+        
+        # Convert results to projections DataFrame
+        projections_list = []
+        for result in all_results:
+            projection_row = {
+                'playerID': result['player_id'],
+                'playerName': result['player_name'],
+                'team': result['metadata'].get('team', ''),
+                'pos': result['metadata'].get('pos', ''),
+                'salary': result['metadata'].get('salary', 0),
+                'projected_fpts': result['prediction']
+            }
+            projections_list.append(projection_row)
+        
+        if not projections_list:
+            logger.warning("No GPU batch projections generated")
+            return pd.DataFrame()
+        
+        projections_df = pd.DataFrame(projections_list)
+        
+        # Cache trained models for potential reuse
+        if should_recalibrate:
+            self.last_training_date = test_date
+            for result in all_results:
+                self.player_models[result['player_id']] = result['model']
+        
+        # Log GPU batch training statistics
+        gpu_stats = self.gpu_batch_trainer.get_stats()
+        models_trained = len(all_results)
+        avg_training_time = gpu_stats.get('average_batch_time', 0)
+        
+        logger.info(f"GPU batch training completed: {models_trained}/{total_players} models trained")
+        logger.info(f"Average batch time: {avg_training_time:.2f}s")
+        logger.info(f"Total GPU training time: {gpu_stats.get('total_training_time', 0):.2f}s")
+        
         return projections_df
 
     def _save_model(self, model, model_file: Path, player_name: str, player_id: str, num_samples: int):

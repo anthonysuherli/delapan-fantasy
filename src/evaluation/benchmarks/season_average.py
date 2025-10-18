@@ -71,7 +71,7 @@ class SeasonAverageBenchmark:
             DataFrame with added 'benchmark_pred' column
         """
         result = slate_data.copy()
-        result['benchmark_pred'] = result['playerID'].map(self.player_averages).fillna(0)
+        result['benchmark_pred'] = result['playerID'].map(self.player_averages).fillna(0).infer_objects(copy=False)
         
         coverage = (result['benchmark_pred'] > 0).sum()
         logger.info(f"Benchmark coverage: {coverage}/{len(result)} players "

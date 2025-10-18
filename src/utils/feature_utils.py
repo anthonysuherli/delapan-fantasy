@@ -89,7 +89,7 @@ class FeatureBuilder:
         feature_cols = [col for col in features_df.columns
                        if col not in ['target', 'gameDate', 'playerID']]
 
-        X = features_df[feature_cols].fillna(0)
+        X = features_df[feature_cols].fillna(0).infer_objects(copy=False)
         y = features_df['target']
 
         logger.info(f"Built training features: {len(X)} samples, {len(feature_cols)} features")

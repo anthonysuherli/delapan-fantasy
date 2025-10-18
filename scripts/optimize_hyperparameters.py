@@ -263,7 +263,7 @@ def main():
     ]
     feature_cols = [col for col in train_features.columns if col not in metadata_cols]
 
-    X_full = train_features[feature_cols].fillna(0)
+    X_full = train_features[feature_cols].fillna(0).infer_objects(copy=False)
     y_full = train_features['target']
 
     if len(X_full) > args.sample_size:

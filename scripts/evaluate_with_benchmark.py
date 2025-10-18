@@ -266,7 +266,7 @@ def main():
     # Generate benchmark predictions
     slate_data['benchmark_pred'] = slate_data['playerID'].map(
         benchmark.player_averages
-    ).fillna(0)
+    ).fillna(0).infer_objects(copy=False)
 
     # Build features
     print("\nBuilding features...")
@@ -329,7 +329,7 @@ def main():
     # Add benchmark predictions
     results['benchmark_pred'] = results['playerID'].map(
         benchmark.player_averages
-    ).fillna(0)
+    ).fillna(0).infer_objects(copy=False)
 
     # Filter to valid comparisons
     has_both = (results['model_pred'] > 0) & (results['benchmark_pred'] > 0)

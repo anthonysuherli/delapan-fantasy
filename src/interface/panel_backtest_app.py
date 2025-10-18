@@ -294,7 +294,19 @@ save_models_checkbox = pn.widgets.Checkbox(name='Save models', value=config['sav
 
 # Results display
 status_text = pn.pane.Markdown('**Status:** Waiting for backtest to start...', width=600)
-results_table = pn.widgets.Tabulator(pd.DataFrame(), layout='fit_columns', page_size=20, height=400, width=800)
+
+# Dataset info display
+dataset_info_pane = pn.pane.Markdown(
+    '',
+    width=950,
+    styles={
+        'background': '#1a1a1a',
+        'padding': '20px',
+        'border-radius': '8px',
+        'border': '1px solid #444'
+    }
+)
+
 summary_pane = pn.pane.Markdown('', width=600)
 
 # Log display - terminal-like with auto-scroll
@@ -358,7 +370,7 @@ def on_run_backtest(event):
     # Reset state
     logs = []
     final_summary = None
-    results_table.value = pd.DataFrame()
+    dataset_info_pane.object = ''
     summary_pane.object = ''
     log_display.object = '<div id="log-terminal" style="height: 300px; width: 100%; overflow-y: auto;"></div>'
     status_text.object = '**Status:** Backtest running...'
@@ -419,24 +431,62 @@ def update_display():
             # Update status
             status_text.object = '**Status:** Backtest completed'
 
-            # Update table
-            summary_data = []
-            for key, value in final_summary.items():
-                if isinstance(value, (int, float, str)):
-                    summary_data.append({'Metric': key, 'Value': value})
+            # Update dataset info
+            dataset_info = f"""
+## Dataset & Model Information
 
-            results_table.value = pd.DataFrame(summary_data)
+<div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-top: 15px;">
 
-            # Update summary
+<div style="background: #2a2a2a; padding: 15px; border-radius: 8px; border-left: 4px solid #58a6ff;">
+<h4 style="margin: 0 0 10px 0; color: #58a6ff;">Dataset Coverage</h4>
+<p style="font-size: 24px; font-weight: bold; margin: 5px 0; color: #e0e0e0;">{final_summary.get('total_players', 'N/A'):,}</p>
+<p style="margin: 0; color: #8b949e; font-size: 13px;">Unique Players</p>
+<p style="font-size: 20px; font-weight: bold; margin: 10px 0 5px 0; color: #e0e0e0;">{final_summary.get('total_slates', 'N/A')}</p>
+<p style="margin: 0; color: #8b949e; font-size: 13px;">Slates Processed</p>
+</div>
+
+<div style="background: #2a2a2a; padding: 15px; border-radius: 8px; border-left: 4px solid #d29922;">
+<h4 style="margin: 0 0 10px 0; color: #d29922;">Model Performance</h4>
+<p style="font-size: 24px; font-weight: bold; margin: 5px 0; color: #e0e0e0;">{final_summary.get('mean_mape', 0):.1f}%</p>
+<p style="margin: 0; color: #8b949e; font-size: 13px;">Mean MAPE</p>
+<p style="font-size: 20px; font-weight: bold; margin: 10px 0 5px 0; color: #e0e0e0;">{final_summary.get('overall_correlation', 0):.3f}</p>
+<p style="margin: 0; color: #8b949e; font-size: 13px;">Correlation</p>
+</div>
+
+<div style="background: #2a2a2a; padding: 15px; border-radius: 8px; border-left: 4px solid #3fb950;">
+<h4 style="margin: 0 0 10px 0; color: #3fb950;">Coverage & Quality</h4>
+<p style="font-size: 24px; font-weight: bold; margin: 5px 0; color: #e0e0e0;">{final_summary.get('coverage', 0):.1%}</p>
+<p style="margin: 0; color: #8b949e; font-size: 13px;">Model Coverage</p>
+<p style="font-size: 20px; font-weight: bold; margin: 10px 0 5px 0; color: #e0e0e0;">{final_summary.get('median_rmse', 0):.2f}</p>
+<p style="margin: 0; color: #8b949e; font-size: 13px;">Median RMSE</p>
+</div>
+
+</div>
+
+<div style="margin-top: 20px; padding: 15px; background: #1e1e1e; border-radius: 8px;">
+<h4 style="margin: 0 0 10px 0; color: #58a6ff;">Configuration</h4>
+<div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; font-size: 13px;">
+<div><span style="color: #8b949e;">Model Type:</span> <span style="color: #e0e0e0;">{model_type_select.value}</span></div>
+<div><span style="color: #8b949e;">Feature Config:</span> <span style="color: #e0e0e0;">{feature_config_select.value}</span></div>
+<div><span style="color: #8b949e;">Per-Player Models:</span> <span style="color: #e0e0e0;">{'Yes' if per_player_checkbox.value else 'No'}</span></div>
+<div><span style="color: #8b949e;">Recalibrate Days:</span> <span style="color: #e0e0e0;">{recalibrate_input.value}</span></div>
+<div><span style="color: #8b949e;">Min Minutes:</span> <span style="color: #e0e0e0;">{minutes_input.value}</span></div>
+<div><span style="color: #8b949e;">Filters Active:</span> <span style="color: #e0e0e0;">{'Yes' if (injury_exclude_out.value or enable_salary_filter.value) else 'No'}</span></div>
+</div>
+</div>
+            """
+            dataset_info_pane.object = dataset_info
+
+            # Update performance summary
             summary_text = f"""
-## Final Summary
+## Performance Breakdown
 
-**Total Slates**: {final_summary.get('total_slates', 'N/A')}
-**Total Players**: {final_summary.get('total_players', 'N/A')}
-**Coverage**: {final_summary.get('coverage', 0):.2%}
-**Mean MAPE**: {final_summary.get('mean_mape', 0):.2f}%
-**Median RMSE**: {final_summary.get('median_rmse', 0):.2f}
-**Overall Correlation**: {final_summary.get('overall_correlation', 0):.3f}
+**Elite Players ($8k+)**: {final_summary.get('elite_mape', 'N/A')}% MAPE
+**Mid-Tier ($5k-$8k)**: {final_summary.get('mid_mape', 'N/A')}% MAPE
+**Budget (<$5k)**: {final_summary.get('budget_mape', 'N/A')}% MAPE
+
+**Total Predictions**: {final_summary.get('total_predictions', 'N/A'):,}
+**Models Trained**: {final_summary.get('models_trained', 'N/A'):,}
             """
             summary_pane.object = summary_text
 
@@ -503,7 +553,7 @@ header = pn.Row(logo, header_text, align='center')
 main = pn.Column(
     header,
     status_text,
-    results_table,
+    dataset_info_pane,
     summary_pane,
     '## Execution Logs',
     log_display,

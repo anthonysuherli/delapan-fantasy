@@ -216,10 +216,10 @@ class TensorFlowDataLoader:
 
         logger.info(f"Creating cached dataset: {len(data)} rows, {len(feature_columns)} features")
 
-        X = data[feature_columns].fillna(0).astype(np.float32).values
+        X = data[feature_columns].fillna(0).infer_objects(copy=False).astype(np.float32).values
 
         if target_column:
-            y = data[target_column].fillna(0).astype(np.float32).values
+            y = data[target_column].fillna(0).infer_objects(copy=False).astype(np.float32).values
             dataset = tf.data.Dataset.from_tensor_slices((X, y))
         else:
             dataset = tf.data.Dataset.from_tensor_slices(X)

@@ -85,8 +85,7 @@ class InjuryTransformer(FeatureTransformer):
             how='left'
         )
         
-        print(f"df: {df.columns}")
-        df['injury_status'] = df['injury_designation'].fillna('Healthy')
+        df['injury_status'] = df['injury_designation'].fillna('Healthy').infer_objects(copy=False)
 
         df['is_injured'] = (df['injury_designation'].notna()).astype(int)
 

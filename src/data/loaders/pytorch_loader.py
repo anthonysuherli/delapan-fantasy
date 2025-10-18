@@ -118,7 +118,7 @@ class ParquetDataset(Dataset):
             else:
                 raise IndexError(f"Index {idx} out of range")
 
-        X = row[self.feature_columns].fillna(0).astype(np.float32).values
+        X = row[self.feature_columns].fillna(0).infer_objects(copy=False).astype(np.float32).values
 
         if self.target_column:
             y = row[self.target_column]
@@ -182,7 +182,7 @@ class StreamingParquetDataset(IterableDataset):
                     chunk = df.iloc[start_idx:end_idx]
 
                     for _, row in chunk.iterrows():
-                        X = row[self.feature_columns].fillna(0).astype(np.float32).values
+                        X = row[self.feature_columns].fillna(0).infer_objects(copy=False).astype(np.float32).values
 
                         if self.target_column:
                             y = row[self.target_column]
