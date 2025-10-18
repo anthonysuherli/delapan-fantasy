@@ -6,12 +6,14 @@ from src.features.transformers.rolling_minmax import RollingMinMaxTransformer
 from src.features.transformers.ewma import EWMATransformer
 from src.features.transformers.target import TargetTransformer
 from src.features.transformers.injury import InjuryTransformer
+from src.features.transformers.opponent_stats import OpponentStatsTransformer
 
 registry.register('rolling_stats', RollingStatsTransformer)
 registry.register('rolling_minmax', RollingMinMaxTransformer)
 registry.register('ewma', EWMATransformer)
 registry.register('target', TargetTransformer)
 registry.register('injury', InjuryTransformer)
+registry.register('opponent_stats', OpponentStatsTransformer)
 
 __all__ = [
     'FeatureTransformer',
@@ -22,5 +24,6 @@ __all__ = [
     'RollingMinMaxTransformer',
     'EWMATransformer',
     'TargetTransformer',
-    'InjuryTransformer'
+    'InjuryTransformer',
+    'OpponentStatsTransformer'
 ]

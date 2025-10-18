@@ -72,7 +72,9 @@ def parse_args():
     parser.add_argument(
         "--feature-config",
         default="default_features",
-        help="Feature configuration name (default: default_features)"
+        help="Feature configuration name or comma-separated list to combine. "
+             "Examples: 'default_features', 'base_features,opponent_features', "
+             "'default_features,opponent_features' (default: default_features)"
     )
 
     parser.add_argument(

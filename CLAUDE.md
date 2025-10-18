@@ -39,14 +39,29 @@ python scripts/collect_dfs_salaries.py --start-date 20241201 --end-date 20241231
 ```
 
 ### Backtesting
+
+Three execution options available:
+
+**Command-line (CPU):**
 ```bash
-# CPU backtest
 python scripts/run_backtest.py --test-start 20250205 --test-end 20250206
 python scripts/run_backtest.py --test-start 20250201 --test-end 20250228 --per-player
+```
 
-# GPU-accelerated backtest
+**Command-line (GPU-accelerated):**
+```bash
 python scripts/run_backtest_gpu.py --test-start 20250205 --test-end 20250206 \
   --model-config config/models/xgboost_a100.yaml --per-player --gpu-id 0
+```
+
+**Interactive Panel UI:**
+```bash
+panel serve src/interface/panel_backtest_app.py --show
+```
+
+**Interactive Streamlit UI:**
+```bash
+streamlit run src/interface/backtest_app.py
 ```
 
 Requires TANK01_API_KEY in .env file. RapidAPI key from Tank01 Fantasy Stats API.
@@ -54,6 +69,7 @@ Requires TANK01_API_KEY in .env file. RapidAPI key from Tank01 Fantasy Stats API
 See [docs/SCRIPTS_GUIDE.md](docs/SCRIPTS_GUIDE.md) for complete scripts documentation.
 See [scripts/README.md](scripts/README.md) for additional details.
 See [docs/GPU_TRAINING.md](docs/GPU_TRAINING.md) for GPU setup and configuration.
+See [docs/PANEL_INTERFACE.md](docs/PANEL_INTERFACE.md) for Panel UI guide.
 
 ## Key Modules
 
@@ -269,6 +285,21 @@ Paths (src/config/paths.py):
 - Data directories
 - Output directories
 
+### Interfaces: src/interface/
+
+Panel-based UI (src/interface/panel_backtest_app.py):
+- Dark-themed browser interface with Hack monospace font
+- Interactive configuration sidebar with experiment presets
+- Real-time results streaming via Tabulator
+- Terminal-like log display with color-coded severity levels
+- Background execution with BacktestRunner (thread-safe queues)
+- Injury and salary filters for player filtering
+- Launch: panel serve src/interface/panel_backtest_app.py --show
+- Access: http://localhost:5006
+
+Streamlit-based UI (src/interface/backtest_app.py - deleted):
+- Previous web interface implementation
+- Replaced by Panel for improved performance and features
 
 ## Implementation Status
 
@@ -543,3 +574,4 @@ slate_data = loader.load_slate_data('20241215')
 historical_data = loader.load_historical_data('20241201', '20241231')
 player_logs = loader.load_historical_player_logs('20241215', lookback_days=365)
 ```
+

@@ -279,7 +279,7 @@ class PerformanceProfiler:
     def save_report(self, output_path: str):
         """Save performance report to file."""
         report = self.format_report()
-        with open(output_path, "w") as f:
+        with open(output_path, "w", encoding='utf-8') as f:
             f.write(report)
         logger.info(f"Performance report saved to {output_path}")
 
@@ -301,6 +301,6 @@ class PerformanceProfiler:
             "operations": [op.to_dict() for op in self.operations],
         }
 
-        with open(output_path, "w") as f:
-            json.dump(data, f, indent=2, default=str)
+        with open(output_path, "w", encoding='utf-8') as f:
+            json.dump(data, f, indent=2, default=str, ensure_ascii=False)
         logger.info(f"Performance metrics saved to {output_path}")

@@ -121,6 +121,7 @@ class FeatureConfig:
         from src.features.transformers.ewma import EWMATransformer
         from src.features.transformers.target import TargetTransformer
         from src.features.transformers.injury import InjuryTransformer
+        from src.features.transformers.opponent_stats import OpponentStatsTransformer
 
         pipeline = feature_pipeline_class()
 
@@ -165,6 +166,20 @@ class FeatureConfig:
                 transformer = InjuryTransformer()
                 pipeline.add(transformer)
                 logger.info(f"Added InjuryTransformer")
+
+            elif transformer_type == 'opponent_stats':
+                features = params.get('features', None)
+                lookback_days = params.get('lookback_days', 365)
+                recent_games_window = params.get('recent_games_window', 10)
+                
+                transformer = OpponentStatsTransformer(
+                    features=features,
+                    lookback_days=lookback_days,
+                    recent_games_window=recent_games_window
+                )
+                pipeline.add(transformer)
+                feature_list = features if features else transformer.default_features
+                logger.info(f"Added OpponentStatsTransformer: {len(feature_list)} features, lookback={lookback_days}d")
 
             else:
                 logger.warning(f"Unknown transformer type: {transformer_type}")
@@ -222,20 +237,166 @@ class FeatureConfig:
 
 def load_feature_config(config_name: str = 'default_features') -> FeatureConfig:
     """
-    Load a feature configuration by name.
+    Load a feature configuration by name or combine multiple configurations.
 
     Args:
-        config_name: Name of config file (without .yaml extension)
+        config_name: Name of config file (without .yaml extension) or
+                    comma-separated list of config names to combine
+                    Examples: 
+                    - 'default_features'
+                    - 'base_features,opponent_features'
+                    - 'default_features,opponent_features,custom_features'
 
     Returns:
-        FeatureConfig instance
+        FeatureConfig instance (merged if multiple configs specified)
 
     Raises:
-        FileNotFoundError: If config file not found
+        FileNotFoundError: If any config file not found
     """
     from pathlib import Path
 
     repo_root = Path(__file__).parent.parent.parent
-    config_path = repo_root / 'config' / 'features' / f'{config_name}.yaml'
+    config_dir = repo_root / 'config' / 'features'
+    
+    # Check if multiple configs specified
+    config_names = [name.strip() for name in config_name.split(',')]
+    
+    if len(config_names) == 1:
+        # Single config - existing behavior
+        config_path = config_dir / f'{config_names[0]}.yaml'
+        return FeatureConfig(str(config_path))
+    else:
+        # Multiple configs - merge them
+        logger.info(f"Combining {len(config_names)} feature configurations: {config_names}")
+        return _merge_feature_configs(config_names, config_dir)
 
-    return FeatureConfig(str(config_path))
+
+def _merge_feature_configs(config_names: List[str], config_dir: Path) -> FeatureConfig:
+    """
+    Merge multiple feature configurations into a single combined config.
+    
+    Args:
+        config_names: List of configuration names to merge
+        config_dir: Directory containing config files
+        
+    Returns:
+        Combined FeatureConfig instance
+    """
+    # Load all configs
+    configs = []
+    for name in config_names:
+        config_path = config_dir / f'{name}.yaml'
+        if not config_path.exists():
+            raise FileNotFoundError(f"Config file not found: {config_path}")
+        configs.append(FeatureConfig(str(config_path)))
+    
+    # Create merged config data
+    merged_data = _create_merged_config_data(configs)
+    
+    # Create temporary merged config file
+    import tempfile
+    import yaml
+    
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+        yaml.dump(merged_data, f, default_flow_style=False)
+        temp_path = f.name
+    
+    # Create FeatureConfig from merged data
+    merged_config = FeatureConfig(temp_path)
+    
+    # Clean up temp file
+    import os
+    os.unlink(temp_path)
+    
+    return merged_config
+
+
+def _create_merged_config_data(configs: List[FeatureConfig]) -> Dict[str, Any]:
+    """
+    Create merged configuration data from multiple FeatureConfig instances.
+    
+    Merging rules:
+    - name: Combined from all config names
+    - description: Combined from all descriptions  
+    - version: Use latest version
+    - stats: Union of all stats lists (no duplicates)
+    - rolling_windows: Use from first config (they should be consistent)
+    - ewma_span: Use from first config
+    - metadata_cols: Union of all metadata columns
+    - categorical_features: Union of all categorical features
+    - numeric_features: Union of all numeric features
+    - transformers: Concatenate all transformer lists (order matters)
+    """
+    if not configs:
+        raise ValueError("No configs to merge")
+    
+    if len(configs) == 1:
+        return configs[0].config
+    
+    # Combine names and descriptions
+    names = [config.name for config in configs]
+    descriptions = [config.description for config in configs if config.description]
+    
+    # Use first config as base
+    base_config = configs[0]
+    
+    merged = {
+        'name': f"Combined: {' + '.join(names)}",
+        'description': f"Merged configuration: {' | '.join(descriptions)}",
+        'version': '1.0.0',
+        'rolling_windows': base_config.rolling_windows,
+        'ewma_span': base_config.ewma_span
+    }
+    
+    # Merge stats (union with preserved order)
+    all_stats = []
+    seen_stats = set()
+    for config in configs:
+        for stat in config.stats:
+            if stat not in seen_stats:
+                all_stats.append(stat)
+                seen_stats.add(stat)
+    merged['stats'] = all_stats
+    
+    # Merge metadata columns
+    all_metadata = []
+    seen_metadata = set()
+    for config in configs:
+        for col in config.metadata_cols:
+            if col not in seen_metadata:
+                all_metadata.append(col)
+                seen_metadata.add(col)
+    merged['metadata_cols'] = all_metadata
+    
+    # Merge categorical features
+    all_categorical = []
+    seen_categorical = set()
+    for config in configs:
+        for feature in config.categorical_features:
+            if feature not in seen_categorical:
+                all_categorical.append(feature)
+                seen_categorical.add(feature)
+    merged['categorical_features'] = all_categorical
+    
+    # Merge numeric features
+    all_numeric = []
+    seen_numeric = set()
+    for config in configs:
+        for feature in config.numeric_features:
+            if feature not in seen_numeric:
+                all_numeric.append(feature)
+                seen_numeric.add(feature)
+    merged['numeric_features'] = all_numeric
+    
+    # Merge transformers (concatenate in order)
+    all_transformers = []
+    for config in configs:
+        all_transformers.extend(config.transformers)
+    merged['transformers'] = all_transformers
+    
+    logger.info(f"Merged config created:")
+    logger.info(f"  Stats: {len(merged['stats'])} total")
+    logger.info(f"  Categorical features: {len(merged['categorical_features'])}")
+    logger.info(f"  Transformers: {len(merged['transformers'])}")
+    
+    return merged

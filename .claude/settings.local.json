@@ -6,7 +6,11 @@
       "Bash(sqlite3:*)",
       "Bash(cat:*)",
       "Bash(npm install:*)",
-      "Bash(jupyter nbconvert:*)"
+      "Bash(jupyter nbconvert:*)",
+      "Read(//c/Users/antho/AppData/Roaming/Cursor/User/**)",
+      "mcp__context7__resolve-library-id",
+      "Bash(git add src/walk_forward_backtest.py docs/BACKTEST_TROUBLESHOOTING.md)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nAdd defensive checks and validation to walk-forward backtest\n\n- Add date range validation in __init__ to prevent backwards date ranges\n- Add empty training data check before accessing gameDate column\n- Add gameDate column existence check in benchmark initialization\n- Add gameDate column handling in per-player model training\n- Create comprehensive BACKTEST_TROUBLESHOOTING guide\n\nFixes KeyError: ''gameDate'' when training data is empty or malformed.\nPrevents confusing failures with clear error messages about date ranges or missing data.\n\n🤖 Generated with Claude Code\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")"
     ],
     "deny": [],
     "ask": []

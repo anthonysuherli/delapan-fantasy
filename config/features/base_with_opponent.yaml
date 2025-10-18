@@ -1,0 +1,79 @@
+name: "Base Features with Opponent Stats"
+description: "Base player features combined with opponent matchup features for enhanced predictions"
+version: "1.0.0"
+
+rolling_windows: [3, 5, 10]
+ewma_span: 5
+
+metadata_cols:
+  - playerID
+  - playerName
+  - team
+  - teamAbv
+  - pos
+  - gameDate
+  - gameID
+  - fpts
+  - target
+  - pts
+  - reb
+  - ast
+  - stl
+  - blk
+  - TOV
+  - mins
+
+categorical_features:
+  - team
+  - teamAbv
+  - pos
+  - opponent_team
+  - is_home_team
+
+# Core player stats (from base_features)
+stats:
+  - pts
+  - reb
+  - ast
+  - stl
+  - blk
+  - mins
+
+transformers:
+  # Basic rolling stats for core player performance
+  - type: rolling_stats
+    params:
+      windows: [3, 5, 10]
+      stats: [pts, reb, ast, stl, blk, mins]
+      include_std: true
+
+  # Opponent features (high-impact subset)
+  - type: opponent_stats
+    params:
+      features:
+        - opp_pace
+        - opp_pg_fpts_allowed
+        - opp_sg_fpts_allowed
+        - opp_sf_fpts_allowed
+        - opp_pf_fpts_allowed
+        - opp_c_fpts_allowed
+        - is_home_team
+        - opp_3pt_defense_rank
+      lookback_days: 365
+      recent_games_window: 10
+
+  # EWMA for recent player form
+  - type: ewma
+    params:
+      span: 5
+      stats: [pts, reb, ast, stl, blk]
+
+  # Target variable
+  - type: target
+    params:
+      target_col: fpts
+      shift_periods: -1
+
+  # Injury status
+  - type: injury
+    params: {}

@@ -94,6 +94,10 @@ delapan-fantasy/
 │   │       ├── base.py               # Metric interface
 │   │       ├── registry.py           # Metric registry
 │   │       └── accuracy.py           # MAPE, RMSE, MAE, Correlation
+│   ├── interface/            # Web interface
+│   │   ├── __init__.py               # Interface module
+│   │   ├── panel_backtest_app.py     # Panel backtest UI
+│   │   └── assets/                   # UI assets (logos, styling)
 │   ├── config/               # Configuration
 │   │   └── paths.py          # Path management
 │   └── utils/                # Utilities
@@ -317,6 +321,29 @@ pytest tests/
 pytest tests/data/ -v
 ```
 
+### Running Backtests
+
+Choose from three execution options:
+
+**Command-line (fastest for batch processing):**
+```bash
+python scripts/run_backtest.py --test-start 20250205 --test-end 20250206 --per-player
+```
+
+**Interactive Panel UI (recommended for exploration):**
+```bash
+panel serve src/interface/panel_backtest_app.py --show
+```
+Opens dashboard at http://localhost:5006 with real-time results and configuration controls.
+
+**Interactive Streamlit UI (alternative):**
+```bash
+streamlit run src/interface/backtest_app.py
+```
+Opens dashboard at http://localhost:8501 with interactive controls.
+
+See [docs/PANEL_INTERFACE.md](docs/PANEL_INTERFACE.md) for Panel UI detailed guide.
+
 ## API Rate Limits
 
 Tank01 RapidAPI limits:
@@ -409,29 +436,94 @@ python scripts/build_historical_game_logs.py
 
 Edit script to configure date range before running.
 
-### Backtest Interface (Streamlit)
+### Architecture
 
-An interactive Streamlit UI is available to explore configurations and stream
-walk-forward backtest progress. The layout mirrors the operational workflow:
+**BacktestRunner (Background Worker)**
+- Executes WalkForwardBacktest in daemon thread
+- Thread-safe queues (log_queue, result_queue) for non-blocking streaming
+- Captures stdout/stderr and logging handlers
+- Graceful error handling with optional error message
 
-1. **Control Panel (sidebar):** Choose experiment YAML files, override database
-   paths, and define training/testing windows before launching a run.
-2. **Results Panel (main view):** Streams backtest metrics and slate-level
-   summaries as they are produced and offers a "Training Input Sample" tab to
-   inspect the engineered features used for model fitting.
-3. **Log Panel (bottom dock):** Continuously mirrors log output from the
-   backtest engine for real-time visibility into progress and potential
-   warnings.
+**Session State Management**
+- backtest_config: Current configuration dictionary
+- logs: Streamed log entries with timestamps
+- daily_results: Per-slate results as they complete
+- final_summary: Aggregated backtest statistics
+- runner: Active BacktestRunner instance
+- training_sample: Cached feature matrix preview
 
-Launch the interface from the project root:
+**Event Loop**
+- Polls runner queues every second (non-blocking get_nowait())
+- Routes events to appropriate state containers
+- Auto-reruns UI while backtest is running
+- Displays error message if execution fails
 
-```bash
-streamlit run src/interface/backtest_app.py
+### Experiment Configuration
+
+Create YAML files in `config/experiments/` to define presets:
+
+```yaml
+data:
+  train_start: "20241001"
+  train_end: "20241130"
+  test_start: "20241201"
+  test_end: "20241215"
+
+model:
+  type: xgboost
+  params:
+    max_depth: 8
+    learning_rate: 0.05
+    n_estimators: 300
+    min_child_weight: 5
+
+evaluation:
+  output_dir: data/backtest_results
 ```
 
-The runner executes the existing `WalkForwardBacktest` pipeline, so ensure the
-SQLite database and configuration paths referenced in the control panel are
-available before starting a session.
+Select preset from sidebar dropdown to populate all fields automatically.
+
+### Training Sample Preview
+
+Inspect engineered features before full backtest:
+
+1. Click "Load sample" button
+2. Adjust row limit slider (5-200 rows)
+3. View DataFrame with columns: playerID, playerName, team, pos, gameDate, target, [features...]
+4. Sample cached until configuration changes
+
+Rebuilds feature matrix using same pipeline as backtest training phase.
+
+### Differences from Script-Based Backtesting
+
+| Aspect | Script (CLI) | Streamlit (UI) |
+|--------|-------------|----------------|
+| Configuration | Command-line arguments | Interactive form controls |
+| Execution | Synchronous (blocks terminal) | Asynchronous (background daemon) |
+| Progress Monitoring | Console output | Real-time streamed panel |
+| Feature Inspection | Separate notebook/script | Integrated "Training Input Sample" tab |
+| Experimentation | Edit code/configs, re-run | Change UI values, click Run |
+| Error Handling | Exception traceback in terminal | Error message in UI panel |
+| Results Access | File system only | Streamed to UI + file system |
+
+### Requirements
+
+- Streamlit >= 1.28.0
+- SQLite database with collected game/salary data (scripts/collect_games.py, scripts/collect_dfs_salaries.py)
+- YAML configuration files in config/experiments/ (optional but recommended)
+
+### Troubleshooting
+
+**Backtest never starts:**
+- Verify SQLite database exists at specified path
+- Check database contains data for training date range
+- Ensure feature config file exists (config/features/default_features.yaml)
+
+**Empty training sample:**
+- Confirm training date range has available player game logs
+- Verify feature pipeline completes without errors
+- Check minutes_threshold isn't filtering all players
+
 
 ## Notebooks
 

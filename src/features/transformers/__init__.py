@@ -3,6 +3,7 @@ from .rolling_minmax import RollingMinMaxTransformer
 from .ewma import EWMATransformer
 from .target import TargetTransformer
 from .injury import InjuryTransformer
+from .opponent_stats import OpponentStatsTransformer
 
 __all__ = [
     'RollingStatsTransformer',
@@ -10,4 +11,5 @@ __all__ = [
     'EWMATransformer',
     'TargetTransformer',
     'InjuryTransformer',
+    'OpponentStatsTransformer',
 ]
