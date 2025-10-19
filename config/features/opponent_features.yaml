@@ -33,6 +33,7 @@ categorical_features:
 
 # Core player stats to include alongside opponent features
 stats:
+  - playerID
   - pts
   - reb
   - ast

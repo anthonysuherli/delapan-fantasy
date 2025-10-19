@@ -20,7 +20,7 @@ from src.features.pipeline import FeaturePipeline
 from src.utils.feature_config import load_feature_config
 from src.evaluation.report_generator import BacktestReportGenerator
 from src.evaluation.pdf_report_generator import PDFStyleBacktestReportGenerator
-from src.evaluation.performance_profiler import PerformanceProfiler
+# PerformanceProfiler removed - using simple timing
 from src.filters.base import PlayerFilter
 from src.config.paths import (
     PER_PLAYER_MODEL_DIR,
@@ -280,7 +280,7 @@ class WalkForwardBacktest:
         self.player_models = {}
         self.last_training_date = None
 
-        self.profiler = PerformanceProfiler()
+        # Profiler removed - using simple timing
 
         self.config = {
             'train_start': train_start,
@@ -549,7 +549,7 @@ class WalkForwardBacktest:
     def run(self) -> Dict[str, Any]:
         from datetime import datetime as dt
 
-        self.profiler.start_backtest()
+        # Simple timing instead of profiler
         backtest_start_time = time.perf_counter()
 
         if self.resume_from_run:
@@ -608,16 +608,14 @@ class WalkForwardBacktest:
         logger.info("INITIALIZING BENCHMARK")
         logger.info("="*80)
 
-        with self.profiler.track("benchmark_initialization") as bench_metrics:
-            benchmark_start_time = time.perf_counter()
-            logger.info("Loading training data for benchmark...")
-            training_data_full = self.loader.load_historical_player_logs(
-                start_date=self.train_start,
-                end_date=self.train_end,
-                num_seasons=self.num_seasons
-            )
-            logger.info(f"Loaded {len(training_data_full)} training records")
-            bench_metrics.num_samples = len(training_data_full)
+        benchmark_start_time = time.perf_counter()
+        logger.info("Loading training data for benchmark...")
+        training_data_full = self.loader.load_historical_player_logs(
+            start_date=self.train_start,
+            end_date=self.train_end,
+            num_seasons=self.num_seasons
+        )
+        logger.info(f"Loaded {len(training_data_full)} training records")
 
             if training_data_full.empty:
                 logger.error(f"No training data available for date range {self.train_start} to {self.train_end}")
@@ -728,8 +726,7 @@ class WalkForwardBacktest:
                 if should_train:
                     injuries_data = slate_data.get('injuries', pd.DataFrame())
 
-                    with self.profiler.track("feature_engineering", num_samples=len(training_data), date=test_date):
-                        X_train, y_train = self._build_training_features_cached(training_data, injuries_data)
+                    X_train, y_train = self._build_training_features_cached(training_data, injuries_data)
 
                     if X_train.empty or y_train.empty:
                         logger.warning(f"Feature generation failed for {test_date}")
@@ -737,13 +734,12 @@ class WalkForwardBacktest:
 
                     input_file = self.run_inputs_dir / f"slate_training_inputs_{test_date}.parquet"
 
-                    with self.profiler.track("model_training", num_samples=len(X_train), model_type=self.model_type, date=test_date):
-                        model = self._train_model(
-                            X_train,
-                            y_train,
-                            save_inputs=True,
-                            input_save_path=str(input_file)
-                        )
+                    model = self._train_model(
+                        X_train,
+                        y_train,
+                        save_inputs=True,
+                        input_save_path=str(input_file)
+                    )
                     self.current_model = model
                     self.last_training_date = test_date
                     logger.info(f"Model trained and cached for {test_date}")
@@ -760,27 +756,24 @@ class WalkForwardBacktest:
                     model = self.current_model
                     logger.info(f"Reusing model from {self.last_training_date}")
 
-                with self.profiler.track("slate_feature_engineering", date=test_date):
-                    slate_features = self._build_slate_features(slate_data, training_data)
+                slate_features = self._build_slate_features(slate_data, training_data)
 
                 if slate_features.empty:
                     logger.warning(f"No slate features for {test_date}")
                     continue
 
-                with self.profiler.track("prediction_generation", num_samples=len(slate_features), date=test_date):
-                    projections = self._generate_projections(model, slate_features)
+                projections = self._generate_projections(model, slate_features)
 
             if projections.empty:
                 logger.warning(f"No projections generated for {test_date}")
                 continue
 
-            with self.profiler.track("benchmark_prediction"):
-                logger.info(f"Adding benchmark predictions...")
-                projections['benchmark_pred'] = projections['playerID'].map(
-                    self.benchmark.player_averages
-                ).fillna(0).infer_objects(copy=False)
-                has_benchmark = (projections['benchmark_pred'] > 0).sum()
-                logger.info(f"Benchmark predictions: {has_benchmark}/{len(projections)} players")
+            logger.info(f"Adding benchmark predictions...")
+            projections['benchmark_pred'] = projections['playerID'].map(
+                self.benchmark.player_averages
+            ).fillna(0).infer_objects(copy=False)
+            has_benchmark = (projections['benchmark_pred'] > 0).sum()
+            logger.info(f"Benchmark predictions: {has_benchmark}/{len(projections)} players")
 
             if self.save_predictions:
                 logger.info("Saving predictions to parquet...")
@@ -789,16 +782,14 @@ class WalkForwardBacktest:
                 logger.info(f"Saved predictions: {predictions_path}")
                 logger.info(f"  Players: {len(projections)}, Columns: {len(projections.columns)}")
 
-            with self.profiler.track("load_actuals", date=test_date):
-                actuals = self._load_actuals(test_date)
+            actuals = self._load_actuals(test_date)
 
             if actuals.empty:
                 logger.warning(f"No actual results for {test_date}")
                 continue
 
             logger.info("Evaluating predictions against actuals...")
-            with self.profiler.track("evaluation", num_samples=len(projections), date=test_date):
-                daily_results, merged_df = self._evaluate_slate(test_date, projections, actuals)
+            daily_results, merged_df = self._evaluate_slate(test_date, projections, actuals)
 
             if self.save_predictions and not merged_df.empty:
                 logger.info("Saving results with actuals...")
@@ -857,7 +848,7 @@ class WalkForwardBacktest:
         if self.enable_feature_caching:
             self._log_cache_stats()
 
-        self.profiler.end_backtest()
+        # Profiler removed
 
         results = self._aggregate_results()
 
@@ -925,21 +916,8 @@ class WalkForwardBacktest:
         logger.info("GENERATING PERFORMANCE REPORT")
         logger.info("="*80)
 
-        try:
-            performance_report_path = self.run_output_dir / "performance_report.txt"
-            self.profiler.save_report(str(performance_report_path))
-            logger.info(f"Performance report: {performance_report_path}")
-
-            performance_json_path = self.run_output_dir / "performance_metrics.json"
-            self.profiler.save_json(str(performance_json_path))
-            logger.info(f"Performance metrics: {performance_json_path}")
-
-            logger.info("")
-            logger.info(self.profiler.format_report())
-            results['performance_report_path'] = str(performance_report_path)
-            results['performance_metrics_path'] = str(performance_json_path)
-        except Exception as e:
-            logger.error(f"Failed to generate performance report: {str(e)}")
+        # Performance profiler removed - using simple timing only
+        logger.info(f"Backtest completed successfully in {self._format_time(backtest_elapsed)}")
 
         return results
 
@@ -1212,7 +1190,7 @@ class WalkForwardBacktest:
 
         per_player_start_time = time.perf_counter()
 
-        with self.profiler.track("per_player_model_generation", num_samples=total_players, date=test_date, per_player=self.per_player_models):
+        # Per-player model generation
             if should_recalibrate and self.n_jobs != 1:
                 logger.info(f"Training models in parallel with {self.n_jobs} workers")
 
@@ -1414,7 +1392,7 @@ class WalkForwardBacktest:
         training_batches = []
         batch_data = []
         
-        with self.profiler.track("gpu_batch_preparation", num_samples=total_players, date=test_date):
+        # GPU batch preparation
             for idx, player_row in salaries_df.iterrows():
                 player_id = player_row.get('playerID')
                 player_name = player_row.get('longName')
@@ -1468,7 +1446,7 @@ class WalkForwardBacktest:
         all_results = []
         total_batches = len(training_batches)
         
-        with self.profiler.track("gpu_batch_training", num_samples=total_players, date=test_date, per_player=True):
+        # GPU batch training
             for batch_idx, batch in enumerate(training_batches, 1):
                 logger.info(f"Training batch {batch_idx}/{total_batches} ({len(batch)} players)")
                 

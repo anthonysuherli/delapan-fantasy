@@ -10,12 +10,8 @@ logger = logging.getLogger(__name__)
 
 
 def _get_gpu_preprocessor():
-    """Lazy import GPU preprocessor to avoid import errors if module not available."""
-    try:
-        from src.data.loaders.gpu_data_preprocessor import GPUDataPreprocessor
-        return GPUDataPreprocessor
-    except ImportError:
-        return None
+    """GPU preprocessor removed - functionality integrated into model."""
+    return None
 
 
 class XGBoostModel(BaseModel):

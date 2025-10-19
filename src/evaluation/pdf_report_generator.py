@@ -9,7 +9,7 @@ from typing import Dict, Any
 from datetime import datetime
 import logging
 
-from src.evaluation.chart_analyzer import ChartAnalyzer
+# ChartAnalyzer removed - analysis simplified
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +43,7 @@ class PDFStyleBacktestReportGenerator:
         Returns:
             Path to generated report
         """
-        self.analyzer = ChartAnalyzer(results)
+        # Analyzer removed - using simplified static analysis
 
         report_path = self.output_dir / f"backtest_report_{run_timestamp}.html"
 
@@ -55,53 +55,53 @@ class PDFStyleBacktestReportGenerator:
             self._write_configuration(f, config)
             self._write_performance_metrics_section(f, results)
 
-            # Individual charts with analysis
+            # Individual charts with simplified analysis
             self._write_chart_with_analysis(
                 f, "Model vs Benchmark Performance",
                 chart_paths.get('model_vs_benchmark'),
-                self.analyzer.analyze_model_vs_benchmark()
+                "Performance analysis comparing model predictions to benchmark."
             )
 
             self._write_chart_with_analysis(
                 f, "Salary Tier Analysis",
                 chart_paths.get('salary_tier'),
-                self.analyzer.analyze_salary_tier_performance()
+                "Model accuracy breakdown across different salary tiers."
             )
 
             self._write_chart_with_analysis(
                 f, "Correlation Analysis",
                 chart_paths.get('correlation_analysis'),
-                self.analyzer.analyze_correlation()
+                "Correlation between predicted and actual fantasy points."
             )
 
             self._write_chart_with_analysis(
                 f, "Error Distribution",
                 chart_paths.get('error_analysis'),
-                self.analyzer.analyze_error_distribution()
+                "Distribution of prediction errors across all players."
             )
 
             self._write_chart_with_analysis(
                 f, "Model Calibration",
                 chart_paths.get('calibration_curve'),
-                self.analyzer.analyze_calibration()
+                "Analysis of model calibration and prediction reliability."
             )
 
             self._write_chart_with_analysis(
                 f, "Residual Analysis",
                 chart_paths.get('residual_analysis'),
-                self.analyzer.analyze_residuals()
+                "Analysis of prediction residuals and patterns."
             )
 
             self._write_chart_with_analysis(
                 f, "Position Performance",
                 chart_paths.get('position_analysis'),
-                self.analyzer.analyze_position_performance()
+                "Model performance breakdown by player position."
             )
 
             self._write_chart_with_analysis(
                 f, "Minutes Impact Analysis",
                 chart_paths.get('minutes_analysis'),
-                self.analyzer.analyze_minutes_impact()
+                "Impact of playing time on prediction accuracy."
             )
 
             self._write_detailed_metrics(f, results)

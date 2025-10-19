@@ -48,7 +48,7 @@ class PlayerNameFilter(PlayerFilter):
             If required name column not found in data
         """
         # Determine name column
-        name_col = self._get_name_column(data)
+        name_col = 'longName'
 
         # Apply case insensitivity if needed
         filter_names = self.names
@@ -63,14 +63,6 @@ class PlayerNameFilter(PlayerFilter):
                data_copy[name_col].str.contains('|'.join(filter_names), regex=True, na=False)
 
         return data.iloc[mask.values]
-
-    @staticmethod
-    def _get_name_column(data: pd.DataFrame) -> str:
-        """Identify name column in DataFrame"""
-        for col in ['playerName', 'name', 'Player', 'player_name']:
-            if col in data.columns:
-                return col
-        raise ValueError(f"No name column found. Available columns: {data.columns.tolist()}")
 
 
 class PlayerIDFilter(PlayerFilter):

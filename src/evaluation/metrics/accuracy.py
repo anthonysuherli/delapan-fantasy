@@ -1,4 +1,6 @@
 import numpy as np
+from scipy.stats import pearsonr as scipy_pearsonr
+from sklearn.metrics import mean_absolute_percentage_error, mean_squared_error, mean_absolute_error
 from .base import BaseMetric
 
 
@@ -33,11 +35,7 @@ class MAPEMetric(BaseMetric):
         if len(y_true) != len(y_pred):
             raise ValueError(f"Array length mismatch: {len(y_true)} vs {len(y_pred)}")
 
-        mask = y_true != 0
-        if not mask.any():
-            return 0.0
-
-        return np.mean(np.abs((y_true[mask] - y_pred[mask]) / y_true[mask])) * 100
+        return mean_absolute_percentage_error(y_true, y_pred) * 100
 
 
 class RMSEMetric(BaseMetric):
@@ -71,7 +69,7 @@ class RMSEMetric(BaseMetric):
         if len(y_true) != len(y_pred):
             raise ValueError(f"Array length mismatch: {len(y_true)} vs {len(y_pred)}")
 
-        return np.sqrt(np.mean((y_true - y_pred) ** 2))
+        return np.sqrt(mean_squared_error(y_true, y_pred))
 
 
 class MAEMetric(BaseMetric):
@@ -105,7 +103,7 @@ class MAEMetric(BaseMetric):
         if len(y_true) != len(y_pred):
             raise ValueError(f"Array length mismatch: {len(y_true)} vs {len(y_pred)}")
 
-        return np.mean(np.abs(y_true - y_pred))
+        return mean_absolute_error(y_true, y_pred)
 
 
 class CorrelationMetric(BaseMetric):
@@ -139,7 +137,8 @@ class CorrelationMetric(BaseMetric):
         if len(y_true) != len(y_pred):
             raise ValueError(f"Array length mismatch: {len(y_true)} vs {len(y_pred)}")
 
-        return np.corrcoef(y_true, y_pred)[0, 1]
+        corr, _ = scipy_pearsonr(y_true, y_pred)
+        return float(corr)
 
 
 class CappedMAPEMetric(BaseMetric):

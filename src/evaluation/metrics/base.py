@@ -1,6 +1,8 @@
 from abc import ABC, abstractmethod
 import numpy as np
 from typing import Any, Tuple, Optional
+from sklearn.covariance import EllipticEnvelope
+from sklearn.ensemble import IsolationForest
 
 
 class BaseMetric(ABC):
@@ -23,7 +25,7 @@ class BaseMetric(ABC):
 
     def _remove_outliers(self, y_true: np.ndarray, y_pred: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """
-        Remove outliers from prediction errors.
+        Remove outliers from prediction errors using scikit-learn methods.
 
         Args:
             y_true: Ground truth values
@@ -32,7 +34,7 @@ class BaseMetric(ABC):
         Returns:
             Tuple of filtered (y_true, y_pred)
         """
-        errors = np.abs(y_true - y_pred)
+        errors = np.abs(y_true - y_pred).reshape(-1, 1)
 
         if self.outlier_method == 'iqr':
             q1 = np.percentile(errors, 25)
@@ -40,20 +42,44 @@ class BaseMetric(ABC):
             iqr = q3 - q1
             lower_bound = q1 - self.outlier_threshold * iqr
             upper_bound = q3 + self.outlier_threshold * iqr
-            mask = (errors >= lower_bound) & (errors <= upper_bound)
+            mask = (errors.ravel() >= lower_bound) & (errors.ravel() <= upper_bound)
 
         elif self.outlier_method == 'zscore':
             mean = np.mean(errors)
             std = np.std(errors)
-            z_scores = np.abs((errors - mean) / std)
-            mask = z_scores <= self.outlier_threshold
+            z_scores = np.abs((errors - mean) / (std + 1e-8))
+            mask = z_scores.ravel() <= self.outlier_threshold
 
         elif self.outlier_method == 'percentile':
             threshold_value = np.percentile(errors, self.outlier_threshold)
-            mask = errors <= threshold_value
+            mask = errors.ravel() <= threshold_value
+
+        elif self.outlier_method == 'isolation_forest':
+            # Use IsolationForest for more robust outlier detection
+            contamination = 0.1  # Assume ~10% outliers
+            clf = IsolationForest(contamination=contamination, random_state=42)
+            predictions = clf.fit_predict(errors)
+            mask = predictions == 1  # 1 = inlier, -1 = outlier
+
+        elif self.outlier_method == 'elliptic_envelope':
+            # Use Elliptic Envelope for robust Mahalanobis distance-based detection
+            contamination = 0.1  # Assume ~10% outliers
+            try:
+                clf = EllipticEnvelope(contamination=contamination, random_state=42)
+                predictions = clf.fit_predict(errors)
+                mask = predictions == 1  # 1 = inlier, -1 = outlier
+            except Exception:
+                # Fallback to IQR if covariance estimation fails
+                q1 = np.percentile(errors, 25)
+                q3 = np.percentile(errors, 75)
+                iqr = q3 - q1
+                lower_bound = q1 - 1.5 * iqr
+                upper_bound = q3 + 1.5 * iqr
+                mask = (errors.ravel() >= lower_bound) & (errors.ravel() <= upper_bound)
 
         else:
-            raise ValueError(f"Unknown outlier method: {self.outlier_method}")
+            raise ValueError(f"Unknown outlier method: {self.outlier_method}. "
+                           f"Supported methods: 'iqr', 'zscore', 'percentile', 'isolation_forest', 'elliptic_envelope'")
 
         return y_true[mask], y_pred[mask]
 

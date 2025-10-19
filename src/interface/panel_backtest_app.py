@@ -98,6 +98,115 @@ pn.extension(
         #log-terminal .log-timestamp {
             color: #8b949e;
         }
+
+        /* Floating terminal panel */
+        #floating-terminal-container {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 50vh;
+            min-height: 100px;
+            max-height: 90vh;
+            background: #0d1117;
+            border-top: 2px solid #30363d;
+            border-radius: 8px 8px 0 0;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.5);
+            resize: vertical;
+            overflow: hidden;
+        }
+
+        #floating-terminal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            background: #161b22;
+            border-bottom: 1px solid #30363d;
+            border-radius: 8px 8px 0 0;
+            user-select: none;
+            cursor: ns-resize;
+        }
+
+        #floating-terminal-header:active {
+            cursor: grabbing;
+        }
+
+        #floating-terminal-header h3 {
+            margin: 0;
+            color: #58a6ff;
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        #floating-terminal-controls {
+            display: flex;
+            gap: 8px;
+        }
+
+        .terminal-btn {
+            background: #21262d;
+            border: 1px solid #30363d;
+            color: #58a6ff;
+            padding: 4px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.2s;
+        }
+
+        .terminal-btn:hover {
+            background: #30363d;
+            border-color: #58a6ff;
+        }
+
+        #floating-terminal-content {
+            flex: 1;
+            overflow-y: auto;
+            overflow-x: hidden;
+            padding: 12px 16px;
+        }
+
+        #floating-terminal-log {
+            color: #58a6ff;
+            font-family: 'Hack', 'Consolas', 'Monaco', monospace;
+            font-size: 12px;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        #floating-terminal-log .log-info {
+            color: #58a6ff;
+        }
+
+        #floating-terminal-log .log-error {
+            color: #f85149;
+        }
+
+        #floating-terminal-log .log-warning {
+            color: #d29922;
+        }
+
+        #floating-terminal-log .log-timestamp {
+            color: #8b949e;
+        }
+
+        /* Adjust main content when floating terminal is visible */
+        body.terminal-open {
+            overflow: hidden;
+        }
+
+        #main-content {
+            transition: margin-bottom 0.3s;
+        }
+
+        #main-content.terminal-open {
+            margin-bottom: 50vh;
+        }
     """]
 )
 
@@ -394,7 +503,7 @@ def update_display():
     if new_logs:
         logs.extend(new_logs)
 
-        # Build terminal-style HTML with color coding
+        # Build terminal-style HTML with color coding for main display
         log_lines = []
         for log in logs[-100:]:  # Last 100 logs
             level = log['level']
@@ -409,7 +518,7 @@ def update_display():
 
         log_html = '<br>'.join(log_lines)
 
-        # Update with auto-scroll JavaScript
+        # Update main log display with auto-scroll JavaScript
         log_display.object = f'''
         <div id="log-terminal" style="height: 300px; width: 100%; overflow-y: auto;">
             {log_html}
@@ -418,6 +527,105 @@ def update_display():
             const logTerminal = document.getElementById('log-terminal');
             if (logTerminal) {{
                 logTerminal.scrollTop = logTerminal.scrollHeight;
+            }}
+        </script>
+        '''
+
+        # Build floating terminal HTML with all logs and auto-show when logs arrive
+        floating_terminal_logs = []
+        for log in logs[-200:]:  # More history in floating terminal
+            level = log['level']
+            level_class = f"log-{level.lower()}"
+            message = log["message"].replace('<', '&lt;').replace('>', '&gt;')
+            floating_terminal_logs.append(
+                f'<span class="log-timestamp">[{log["timestamp"]}]</span> '
+                f'<span class="{level_class}">{level:8s}</span> '
+                f'{message}'
+            )
+
+        floating_log_html = '<br>'.join(floating_terminal_logs)
+
+        # Update floating terminal with auto-scroll and auto-show
+        floating_terminal_html.object = f'''
+        <div id="floating-terminal-container" style="display: flex;">
+            <div id="floating-terminal-header">
+                <h3>⚡ Live Terminal</h3>
+                <div id="floating-terminal-controls">
+                    <button class="terminal-btn" onclick="clearTerminal()">Clear</button>
+                    <button class="terminal-btn" onclick="toggleTerminal()">Minimize</button>
+                </div>
+            </div>
+            <div id="floating-terminal-content">
+                <div id="floating-terminal-log">{floating_log_html}</div>
+            </div>
+        </div>
+        <script>
+            window.terminalVisible = true;
+            document.body.classList.add('terminal-open');
+            const container = document.getElementById('floating-terminal-content');
+            if (container) {{
+                container.scrollTop = container.scrollHeight;
+            }}
+
+            function showTerminal() {{
+                const container = document.getElementById('floating-terminal-container');
+                if (container) {{
+                    container.style.display = 'flex';
+                    window.terminalVisible = true;
+                    document.body.classList.add('terminal-open');
+                }}
+            }}
+
+            function hideTerminal() {{
+                const container = document.getElementById('floating-terminal-container');
+                if (container) {{
+                    container.style.display = 'none';
+                    window.terminalVisible = false;
+                    document.body.classList.remove('terminal-open');
+                }}
+            }}
+
+            function toggleTerminal() {{
+                window.terminalVisible ? hideTerminal() : showTerminal();
+            }}
+
+            function clearTerminal() {{
+                const logDiv = document.getElementById('floating-terminal-log');
+                if (logDiv) {{
+                    logDiv.innerHTML = '';
+                }}
+            }}
+
+            // Draggable resize
+            let isResizing = false;
+            let startY = 0;
+            let startHeight = 0;
+
+            const header = document.getElementById('floating-terminal-header');
+            const container = document.getElementById('floating-terminal-container');
+
+            if (header && container) {{
+                header.addEventListener('mousedown', (e) => {{
+                    isResizing = true;
+                    startY = e.clientY;
+                    startHeight = container.offsetHeight;
+                    document.body.style.cursor = 'ns-resize';
+                    e.preventDefault();
+                }});
+
+                document.addEventListener('mousemove', (e) => {{
+                    if (!isResizing) return;
+                    const deltaY = startY - e.clientY;
+                    const newHeight = Math.min(Math.max(startHeight + deltaY, 100), window.innerHeight * 0.9);
+                    container.style.height = newHeight + 'px';
+                }});
+
+                document.addEventListener('mouseup', () => {{
+                    if (isResizing) {{
+                        isResizing = false;
+                        document.body.style.cursor = '';
+                    }}
+                }});
             }}
         </script>
         '''
@@ -565,5 +773,12 @@ main = pn.Column(
     }
 )
 
-# Serve
-pn.Row(sidebar, main).servable()
+# Floating terminal panel HTML - injected via raw HTML pane
+floating_terminal_html = pn.pane.HTML(
+    '''
+    <div id="floating-terminal-container" style="display: none;"></div>
+    '''
+)
+
+# Serve with floating terminal
+pn.Row(sidebar, main, floating_terminal_html).servable()

@@ -24,6 +24,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.walk_forward_backtest import WalkForwardBacktest
 from src.data.loaders.historical_loader import HistoricalDataLoader
 from src.filters import ColumnFilter, InjuryFilter, CompositeFilter
+from src.filters.player_filters import PlayerIDFilter, PlayerNameFilter, PlayerIDFromCSVFilter
 
 
 def parse_args():
@@ -235,6 +236,31 @@ def parse_args():
         help="Exclude players with questionable injury status"
     )
 
+    parser.add_argument(
+        "--filter-player-ids",
+        type=str,
+        default=None,
+        help="Filter by player ID(s). Comma or space-separated list. "
+             "Examples: '123,456,789' or '123 456 789' or single ID '123'"
+    )
+
+    parser.add_argument(
+        "--filter-player-names",
+        type=str,
+        default=None,
+        help="Filter by player name(s). Comma or space-separated list. "
+             "Supports partial matches (case-insensitive). "
+             "Examples: 'LeBron,Durant' or 'LeBron Durant' or 'LeBron'"
+    )
+
+    parser.add_argument(
+        "--filter-players-csv",
+        type=str,
+        default=None,
+        help="Filter by player IDs from CSV file. CSV must contain 'playerID' column. "
+             "Example: 'my_players.csv' or '/path/to/players.csv'"
+    )
+
     return parser.parse_args()
 
 
@@ -341,6 +367,40 @@ def main():
         if args.filter_exclude_questionable:
             excluded.append('QUESTIONABLE')
         print(f"Filter: exclude injury status {', '.join(excluded)}")
+
+    if args.filter_player_ids:
+        # Parse comma or space-separated player IDs
+        player_ids = [pid.strip() for pid in args.filter_player_ids.replace(',', ' ').split() if pid.strip()]
+        if player_ids:
+            player_id_filter = PlayerIDFilter(player_ids)
+            player_filters.append(player_id_filter)
+            ids_display = ', '.join(player_ids[:5])
+            if len(player_ids) > 5:
+                ids_display += f", ... (+{len(player_ids) - 5} more)"
+            print(f"Filter: player ID in [{ids_display}]")
+
+    if args.filter_player_names:
+        # Parse comma or space-separated player names
+        player_names = [name.strip() for name in args.filter_player_names.replace(',', '|').split('|') if name.strip()]
+        if player_names:
+            player_name_filter = PlayerNameFilter(player_names, case_sensitive=False)
+            player_filters.append(player_name_filter)
+            names_display = ', '.join(player_names[:3])
+            if len(player_names) > 3:
+                names_display += f", ... (+{len(player_names) - 3} more)"
+            print(f"Filter: player name contains [{names_display}]")
+
+    if args.filter_players_csv:
+        try:
+            csv_filter = PlayerIDFromCSVFilter(args.filter_players_csv)
+            player_filters.append(csv_filter)
+            print(f"Filter: player IDs from CSV ({len(csv_filter.player_ids)} players)")
+        except FileNotFoundError as e:
+            print(f"ERROR: {e}")
+            sys.exit(1)
+        except ValueError as e:
+            print(f"ERROR: {e}")
+            sys.exit(1)
 
     if player_filters:
         print(f"\nTotal filters: {len(player_filters)}\n")
