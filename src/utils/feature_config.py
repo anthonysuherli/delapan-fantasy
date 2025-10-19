@@ -5,6 +5,8 @@ Loads feature configuration from YAML files and builds feature pipelines.
 """
 
 import yaml
+import tempfile
+import os
 from pathlib import Path
 from typing import Dict, Any, List, Tuple
 import logging
@@ -294,18 +296,14 @@ def _merge_feature_configs(config_names: List[str], config_dir: Path) -> Feature
     merged_data = _create_merged_config_data(configs)
     
     # Create temporary merged config file
-    import tempfile
-    import yaml
-    
     with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
         yaml.dump(merged_data, f, default_flow_style=False)
         temp_path = f.name
-    
+
     # Create FeatureConfig from merged data
     merged_config = FeatureConfig(temp_path)
-    
+
     # Clean up temp file
-    import os
     os.unlink(temp_path)
     
     return merged_config
