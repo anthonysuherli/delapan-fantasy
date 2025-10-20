@@ -29,35 +29,36 @@ class SeasonAverageBenchmark:
     def fit(self, historical_data: pd.DataFrame) -> 'SeasonAverageBenchmark':
         """
         Calculate player season averages from historical data.
-        
+
         Args:
             historical_data: DataFrame with 'playerID' and 'fpts' columns
-            
+
         Returns:
             self for method chaining
         """
         if 'playerID' not in historical_data.columns or 'fpts' not in historical_data.columns:
             raise ValueError("historical_data must contain 'playerID' and 'fpts' columns")
-        
+
         # Calculate averages per player
         player_stats = historical_data.groupby('playerID').agg({
             'fpts': ['mean', 'count']
         })
-        
+
         # Flatten column names
         player_stats.columns = ['avg_fpts', 'game_count']
         player_stats = player_stats.reset_index()
-        
+
         # Filter by minimum games
         qualified = player_stats[player_stats['game_count'] >= self.min_games]
-        
+
         # Store averages
         self.player_averages = qualified.set_index('playerID')['avg_fpts'].to_dict()
         self.player_game_counts = qualified.set_index('playerID')['game_count'].to_dict()
-        
+
+        unique_players = historical_data['playerID'].nunique()
         logger.info(f"Fitted benchmark for {len(self.player_averages)} players "
-                   f"(min_games={self.min_games})")
-        
+                   f"(min_games={self.min_games}, total_unique_players={unique_players})")
+
         return self
     
     def predict(self, slate_data: pd.DataFrame) -> pd.DataFrame:

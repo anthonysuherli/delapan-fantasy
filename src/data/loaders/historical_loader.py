@@ -35,7 +35,7 @@ class HistoricalDataLoader(DataLoader):
         Returns:
             Season start date in YYYYMMDD format (October 1st of season year)
         """
-        target_dt = datetime.strptime(target_date, '%Y%m%d')
+        target_dt = datetime.strptime(str(target_date), '%Y%m%d')
 
         if target_dt.month >= 10:
             season_year = target_dt.year
@@ -57,7 +57,7 @@ class HistoricalDataLoader(DataLoader):
             Previous season start date in YYYYMMDD format
         """
         current_season_start = HistoricalDataLoader.get_season_start_date(target_date)
-        current_season_dt = datetime.strptime(current_season_start, '%Y%m%d')
+        current_season_dt = datetime.strptime(str(current_season_start), '%Y%m%d')
         previous_season_dt = datetime(current_season_dt.year - 1, 10, 1)
         return previous_season_dt.strftime('%Y%m%d')
 
@@ -153,7 +153,8 @@ class HistoricalDataLoader(DataLoader):
         self,
         start_date: str = None,
         end_date: str = None,
-        num_seasons: int = 2
+        num_seasons: int = 2,
+        player_ids: Optional[List[str]] = None
     ) -> pd.DataFrame:
         """
         Load player game logs for training with strict temporal ordering.
@@ -166,6 +167,8 @@ class HistoricalDataLoader(DataLoader):
             end_date: End date in YYYYMMDD format (exclusive)
             num_seasons: Number of seasons to load (default 2: current + previous)
                         Only used if start_date is not provided
+            player_ids: Optional list of player IDs to filter for. If provided, only
+                       loads data for these specific players.
 
         Returns:
             DataFrame with player logs before end_date
@@ -190,6 +193,9 @@ class HistoricalDataLoader(DataLoader):
                 f"current season starts {current_season_start})"
             )
 
+        if player_ids:
+            logger.info(f"Filtering for {len(player_ids)} specific players")
+
         try:
             filters = {'start_date': start_date, 'end_date': end_date}
             df = self.storage.load('box_scores', filters)
@@ -198,10 +204,16 @@ class HistoricalDataLoader(DataLoader):
                 logger.warning(f"No historical data found for date range {start_date} to {end_date}")
                 return pd.DataFrame()
 
+            # Filter by player IDs if provided
+            if player_ids and 'playerID' in df.columns:
+                initial_rows = len(df)
+                df = df[df['playerID'].isin(player_ids)]
+                logger.info(f"Filtered to {len(df)}/{initial_rows} rows for {len(player_ids)} players")
+
             if 'gameDate' in df.columns:
                 df['gameDate'] = pd.to_datetime(df['gameDate'], format='%Y%m%d', errors='coerce')
                 max_date_in_data = df['gameDate'].max()
-                end_date_dt = datetime.strptime(end_date, '%Y%m%d')
+                end_date_dt = datetime.strptime(str(end_date), '%Y%m%d')
 
                 if max_date_in_data >= end_date_dt:
                     logger.error(f"LOOKAHEAD BIAS DETECTED: Data contains dates >= {end_date}")
