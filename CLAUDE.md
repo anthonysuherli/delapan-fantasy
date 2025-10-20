@@ -131,7 +131,11 @@ data/
 HistoricalDataLoader (src/data/loaders/historical_loader.py):
 - load_slate_data(date): Load all data for a specific slate
 - load_historical_data(start_date, end_date): Load data across date range
-- load_historical_player_logs(end_date, lookback_days): Load player logs with temporal validation
+- load_historical_player_logs(start_date, end_date, num_seasons, player_ids): Load player logs with temporal validation
+  - start_date: Optional training start date (overrides num_seasons)
+  - end_date: Required exclusive end date
+  - num_seasons: Number of seasons to load (default 2: current + previous)
+  - player_ids: Optional list of player IDs to filter (optimizes memory usage)
 - load_slate_dates(start_date, end_date): Get dates with games in range
 - Prevents lookahead bias in training data
 
@@ -325,6 +329,13 @@ Performance benchmarks (2025-02-05):
 - Overall: 81.18% MAPE, 0.728 correlation
 - Coverage: 96.4% of players with models
 - Issues: Low-output player MAPE inflation, missing contextual features
+
+Player filtering optimization (2025-10-20):
+- Pre-scan phase identifies filtered player IDs across all test slates
+- Optimized data loading: Only loads historical data for filtered players
+- Benchmark fitted only on filtered player histories
+- Reduced memory footprint and faster feature engineering
+- Unique player tracking: Reports both total player-games and distinct player count
 
 Active development: Injury filtering, contextual features, multi-slate statistical validation
 
@@ -572,6 +583,18 @@ loader = HistoricalDataLoader(storage)
 
 slate_data = loader.load_slate_data('20241215')
 historical_data = loader.load_historical_data('20241201', '20241231')
-player_logs = loader.load_historical_player_logs('20241215', lookback_days=365)
+
+# Load current season data
+player_logs = loader.load_historical_player_logs(
+    end_date='20241215',
+    num_seasons=1
+)
+
+# Load with player filtering (memory optimization)
+filtered_logs = loader.load_historical_player_logs(
+    end_date='20241215',
+    num_seasons=2,
+    player_ids=['2544', '201935', '203507']  # LeBron, Durant, Giannis
+)
 ```
 

@@ -4,10 +4,10 @@ Complete documentation for the NBA DFS machine learning pipeline.
 
 ## Quick Links
 
-- [Scripts Guide](SCRIPTS_GUIDE.md) - Complete guide to all scripts with usage examples
-- [Feature Configuration](FEATURE_CONFIG_INTEGRATION.md) - YAML-based feature pipeline configuration
-- [Local Separated Setup](LOCAL_SEPARATED_SETUP.md) - Separated architecture for local development
-- [Google Colab Setup](COLAB_SETUP.md) - Cloud training on Google Colab
+- [Scripts Guide](setup/SCRIPTS_GUIDE.md) - Complete guide to all scripts with usage examples
+- [Feature Configuration](features/FEATURE_CONFIG_INTEGRATION.md) - YAML-based feature pipeline configuration
+- [Local Separated Setup](setup/LOCAL_SEPARATED_SETUP.md) - Separated architecture for local development
+- [Google Colab Setup](setup/COLAB_SETUP.md) - Cloud training on Google Colab
 - [Project Overview](../CLAUDE.md) - Architecture, modules, and development workflow
 - [Scripts README](../scripts/README.md) - Detailed script documentation
 
@@ -43,6 +43,35 @@ python scripts/run_backtest.py --test-start 20250205 --test-end 20250205
 python scripts/run_backtest.py --test-start 20250201 --test-end 20250207 --per-player
 ```
 
+### 4. Player Filtering (Memory Optimization)
+
+Filter players before loading training data to reduce memory usage and speed up backtests:
+
+```bash
+# Filter by minimum salary
+python scripts/run_backtest.py --test-start 20250205 --test-end 20250215 \
+  --filter-salary-min 5000
+
+# Filter by player names
+python scripts/run_backtest.py --test-start 20250205 --test-end 20250215 \
+  --filter-player-names "LeBron James,Stephen Curry,Kevin Durant"
+
+# Filter by player IDs from CSV
+python scripts/run_backtest.py --test-start 20250205 --test-end 20250215 \
+  --filter-player-ids-csv data/elite_players.csv
+
+# Combine multiple filters
+python scripts/run_backtest.py --test-start 20250205 --test-end 20250215 \
+  --filter-salary-min 7000 --filter-injury-exclude OUT,GTD
+```
+
+**Benefits:**
+- Pre-scan identifies filtered players across all test slates
+- Only loads historical data for filtered players
+- Benchmark fitted only on filtered subset
+- Reduced memory footprint (e.g., 2 players vs. 500 players)
+- Faster feature engineering with smaller datasets
+
 ## Deployment Options
 
 ### Integrated vs Separated Architecture
@@ -60,7 +89,7 @@ python scripts/run_backtest.py \
   --per-player
 ```
 
-See [LOCAL_SEPARATED_SETUP.md](LOCAL_SEPARATED_SETUP.md) for complete guide.
+See [LOCAL_SEPARATED_SETUP.md](setup/LOCAL_SEPARATED_SETUP.md) for complete guide.
 
 ### Cloud Training
 
@@ -70,39 +99,75 @@ Free machine during training with Google Colab:
 - **Colab Pro:** $10/month, ~10.4 min/slate (recommended)
 - **Colab Pro+:** $50/month, ~5.2 min/slate
 
-See [COLAB_SETUP.md](COLAB_SETUP.md) for setup instructions.
+See [COLAB_SETUP.md](setup/COLAB_SETUP.md) for setup instructions.
 
 ## Documentation Structure
 
-### Core Documentation
+### 📁 Setup & Configuration
+**Directory: `setup/`**
 
-- **[SCRIPTS_GUIDE.md](SCRIPTS_GUIDE.md)** - Comprehensive guide to all scripts
+- **[SCRIPTS_GUIDE.md](setup/SCRIPTS_GUIDE.md)** - Comprehensive guide to all scripts
   - Data collection scripts
   - Model training and evaluation
   - Command examples and arguments
   - Troubleshooting and best practices
 
-- **[FEATURE_CONFIG_INTEGRATION.md](FEATURE_CONFIG_INTEGRATION.md)** - Feature engineering
-  - YAML configuration system
+- **[LOCAL_SEPARATED_SETUP.md](setup/LOCAL_SEPARATED_SETUP.md)** - Separated architecture guide
+  - Directory structure and benefits
+  - Setup instructions
+  - Path resolution and configuration
+  - Storage recommendations
+
+- **[COLAB_SETUP.md](setup/COLAB_SETUP.md)** - Google Colab training guide
+  - Colab tier comparison and pricing
+  - Setup and data sync instructions
+  - Configuration and optimization
+  - Best practices for cloud training
+
+### 🔄 Backtesting & Evaluation
+**Directory: `backtesting/`**
+
+- **[BACKTESTING_PIPELINE_FLOW.md](backtesting/BACKTESTING_PIPELINE_FLOW.md)** - Complete pipeline flow & logic
+- **[BACKTESTING_DATA_EXAMPLES.md](backtesting/BACKTESTING_DATA_EXAMPLES.md)** - Data transformation examples
+- **[VALID_BACKTEST_CONFIGURATIONS.md](backtesting/VALID_BACKTEST_CONFIGURATIONS.md)** - Working configurations
+- **[BACKTEST_TROUBLESHOOTING.md](backtesting/BACKTEST_TROUBLESHOOTING.md)** - Common issues & solutions
+- **[CHECKPOINT_RESUME.md](backtesting/CHECKPOINT_RESUME.md)** - Resume interrupted backtests
+- **[LINEUP_GENERATION.md](backtesting/LINEUP_GENERATION.md)** - Optimize lineups from predictions
+
+### ⚙️ Feature Engineering
+**Directory: `features/`**
+
+- **[FEATURE_CONFIG_INTEGRATION.md](features/FEATURE_CONFIG_INTEGRATION.md)** - YAML-based feature configuration
+  - Configuration system
   - Rolling statistics transformers
   - EWMA transformers
   - Custom feature creation
 
-### Deployment Documentation
+- **[OPPONENT_FEATURES.md](features/OPPONENT_FEATURES.md)** - Opponent matchup features
+- **[PLAYER_FILTERING.md](features/PLAYER_FILTERING.md)** - Player filtering strategies
 
-- **[LOCAL_SEPARATED_SETUP.md](LOCAL_SEPARATED_SETUP.md)** - Separated architecture guide
-  - Directory structure and benefits
-  - Setup instructions
-  - Path resolution and configuration
-  - Migration from integrated architecture
-  - Storage recommendations
+### 🖥️ User Interfaces
+**Directory: `interfaces/`**
 
-- **[COLAB_SETUP.md](COLAB_SETUP.md)** - Google Colab training guide
-  - Colab tier comparison and pricing
-  - Setup and data sync instructions
-  - Configuration and optimization
-  - Troubleshooting common issues
-  - Best practices for cloud training
+- **[PANEL_INTERFACE.md](interfaces/PANEL_INTERFACE.md)** - Interactive web-based control center
+  - Real-time backtest monitoring
+  - Configuration management
+  - Live log streaming
+
+### 🚀 Performance Optimization
+**Directory: `optimization/`**
+
+- **[GPU_OPTIMIZATION_GUIDE.md](optimization/GPU_OPTIMIZATION_GUIDE.md)** - GPU acceleration implementation
+  - Feature preprocessing cache
+  - GPU batch training system
+  - Performance benchmarks
+
+- **[BAYESIAN_OPTIMIZATION.md](optimization/BAYESIAN_OPTIMIZATION.md)** - Hyperparameter optimization
+
+### ☁️ Deployment & Infrastructure
+**Directory: `deployment/`**
+
+- **[SAGEMAKER_DEPLOYMENT.md](deployment/SAGEMAKER_DEPLOYMENT.md)** - AWS SageMaker deployment
 
 ### Project Documentation
 
@@ -326,7 +391,7 @@ python scripts/run_backtest.py --test-start 20250205 --test-end 20250205 --verbo
 
 When adding new features:
 1. Document in appropriate section
-2. Add examples to [SCRIPTS_GUIDE.md](SCRIPTS_GUIDE.md)
+2. Add examples to [SCRIPTS_GUIDE.md](setup/SCRIPTS_GUIDE.md)
 3. Update [../CLAUDE.md](../CLAUDE.md) if architecture changes
 4. Write tests in `tests/`
 
