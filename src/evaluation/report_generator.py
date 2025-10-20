@@ -379,7 +379,8 @@ class BacktestReportGenerator:
         f.write('<div class="summary-box">\n')
         f.write(f"<strong>Date Range:</strong> {results.get('date_range', 'N/A')}<br>\n")
         f.write(f"<strong>Total Slates Processed:</strong> {results.get('num_slates', 0)}<br>\n")
-        f.write(f"<strong>Total Players Evaluated:</strong> {results.get('total_players_evaluated', 0):.0f}<br>\n")
+        f.write(f"<strong>Total Player-Games Evaluated:</strong> {results.get('total_players_evaluated', 0):.0f}<br>\n")
+        f.write(f"<strong>Unique Players Evaluated:</strong> {results.get('unique_players_evaluated', 0)}<br>\n")
         f.write(f"<strong>Average Players per Slate:</strong> {results.get('avg_players_per_slate', 0):.1f}\n")
         f.write("</div>\n\n")
 

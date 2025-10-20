@@ -728,6 +728,8 @@ class WalkForwardBacktest:
         logger.info("")
 
         slate_times = []
+        unique_player_ids = set()  # Track unique players across all slates
+
         for i, test_date in enumerate(tqdm(slate_dates, desc="Backtesting slates")):
             if test_date in completed_slates:
                 logger.info(f"Skipping slate {i+1}/{len(slate_dates)}: {test_date} (already completed)")
@@ -736,6 +738,9 @@ class WalkForwardBacktest:
                     self.results.append(slate_result['daily_result'])
                     merged_df = pd.read_parquet(self.run_predictions_dir / f"{test_date}_with_actuals.parquet")
                     self.all_predictions.append(merged_df)
+                    # Track unique players from checkpoint
+                    if 'playerID' in merged_df.columns:
+                        unique_player_ids.update(merged_df['playerID'].unique())
                 continue
 
             slate_start_time = time.perf_counter()
@@ -893,6 +898,10 @@ class WalkForwardBacktest:
 
             self.results.append(daily_results)
             self.all_predictions.append(merged_df)
+
+            # Track unique players
+            if not merged_df.empty and 'playerID' in merged_df.columns:
+                unique_player_ids.update(merged_df['playerID'].unique())
 
             self._save_slate_checkpoint(test_date, daily_results, merged_df)
 
@@ -1810,7 +1819,8 @@ class WalkForwardBacktest:
         logger.info("="*80)
         logger.info(f"Number of Slates: {len(daily_df)}")
         logger.info(f"Date Range: {daily_df['date'].min()} to {daily_df['date'].max()}")
-        logger.info(f"Total Players Evaluated: {daily_df['num_players'].sum():.0f}")
+        logger.info(f"Total Player-Games Evaluated: {daily_df['num_players'].sum():.0f}")
+        logger.info(f"Unique Players Evaluated: {len(unique_player_ids)}")
         logger.info(f"Average Players per Slate: {daily_df['num_players'].mean():.1f}")
         logger.info("")
         logger.info("Model Performance:")
@@ -1975,6 +1985,7 @@ class WalkForwardBacktest:
             'benchmark_mean_wmape': daily_df['benchmark_wmape'].mean() if 'benchmark_wmape' in daily_df.columns else np.nan,
             'mape_improvement': mape_improvement,
             'total_players_evaluated': daily_df['num_players'].sum(),
+            'unique_players_evaluated': len(unique_player_ids),
             'avg_players_per_slate': daily_df['num_players'].mean(),
             'daily_results': daily_df,
             'all_predictions': all_predictions_df
