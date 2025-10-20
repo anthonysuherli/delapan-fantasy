@@ -492,13 +492,30 @@ class PDFStyleBacktestReportGenerator:
         num_slates = results.get('num_slates', 0)
         total_players = results.get('total_players_evaluated', 0)
 
+        # Handle division by zero for average players per slate
+        avg_players_per_slate = int(total_players/num_slates) if num_slates > 0 else 0
+
+        # Handle empty data scenario
+        if num_slates == 0:
+            overview_text = "This report analyzes the performance of a machine learning model for NBA DFS fantasy point predictions. <strong>No game slates were found in the specified date range.</strong>"
+            key_findings = """
+        <li>No data available for the specified date range</li>
+        <li>Please verify that data exists for the test period</li>
+        <li>Check that the database contains games and DFS salaries for the selected dates</li>"""
+        else:
+            overview_text = f"This report analyzes the performance of a machine learning model for NBA DFS fantasy point predictions across {num_slates} game slates, evaluating {int(total_players)} player-game instances."
+            key_findings = f"""
+        <li>Model achieved {model_mape:.1f}% MAPE compared to benchmark's {benchmark_mape:.1f}% ({'outperformance' if improvement > 0 else 'underperformance'} of {abs(improvement):.1f}%)</li>
+        <li>Correlation of {correlation:.3f} indicates {'strong' if correlation > 0.7 else 'moderate' if correlation > 0.6 else 'weak'} predictive relationship</li>
+        <li>Model evaluated across {num_slates} distinct game slates with {avg_players_per_slate:.0f} players per slate on average</li>"""
+
         f.write(f"""
 <div class="page">
     <h1 id="executive-summary">Executive Summary</h1>
 
     <div class="summary-box">
         <h3>Overview</h3>
-        <p>This report analyzes the performance of a machine learning model for NBA DFS fantasy point predictions across {num_slates} game slates, evaluating {int(total_players)} player-game instances.</p>
+        <p>{overview_text}</p>
     </div>
 
     <div class="metric-grid">
@@ -517,10 +534,7 @@ class PDFStyleBacktestReportGenerator:
     </div>
 
     <h3>Key Findings</h3>
-    <ul>
-        <li>Model achieved {model_mape:.1f}% MAPE compared to benchmark's {benchmark_mape:.1f}% ({'outperformance' if improvement > 0 else 'underperformance'} of {abs(improvement):.1f}%)</li>
-        <li>Correlation of {correlation:.3f} indicates {'strong' if correlation > 0.7 else 'moderate' if correlation > 0.6 else 'weak'} predictive relationship</li>
-        <li>Model evaluated across {num_slates} distinct game slates with {int(total_players/num_slates):.0f} players per slate on average</li>
+    <ul>{key_findings}
     </ul>
 </div>
 
@@ -529,18 +543,59 @@ class PDFStyleBacktestReportGenerator:
 
     def _write_configuration(self, f, config: Dict[str, Any]):
         """Write configuration section."""
+        # Build salary tiers string
+        salary_tiers_str = 'N/A'
+        if config.get('salary_tiers'):
+            salary_tiers_str = ', '.join(f"${t:,}" for t in config['salary_tiers'])
+
+        # Build GPU config section
+        gpu_config_html = ''
+        model_params = config.get('model_params', {})
+        if model_params.get('device') and 'cuda' in str(model_params.get('device', '')):
+            device = model_params.get('device', 'N/A')
+            gpu_id = device.split(':')[1] if ':' in str(device) else 'N/A'
+            gpu_config_html = f"""
+    <h3>GPU Configuration</h3>
+    <table>
+        <tr><th>Parameter</th><th>Value</th></tr>
+        <tr><td>Enabled</td><td>Yes</td></tr>
+        <tr><td>GPU ID</td><td>{gpu_id}</td></tr>
+        <tr><td>Device</td><td>{device}</td></tr>
+        <tr><td>Tree Method</td><td>{model_params.get('tree_method', 'N/A')}</td></tr>
+        {f"<tr><td>Config File</td><td>{config.get('model_config_file', 'N/A')}</td></tr>" if config.get('model_config_file') else ''}
+    </table>
+"""
+
+        # Build player filters section
+        player_filters_html = ''
+        if config.get('player_filters'):
+            filters_rows = ''.join(f"<tr><td>{f}</td></tr>\n" for f in config['player_filters'])
+            player_filters_html = f"""
+    <h3>Player Filters</h3>
+    <table>
+        <tr><th>Filter</th></tr>
+        {filters_rows}
+    </table>
+"""
+
         f.write(f"""
 <div class="page">
     <h1 id="configuration">Configuration</h1>
 
-    <h3>Training Period</h3>
-    <p><strong>Start:</strong> {config.get('train_start', 'N/A')}<br>
-    <strong>End:</strong> {config.get('train_end', 'N/A')}<br>
-    <strong>Seasons:</strong> {config.get('num_seasons', 'N/A')}</p>
+    <h3>General</h3>
+    <table>
+        <tr><th>Parameter</th><th>Value</th></tr>
+        {f"<tr><td>Database</td><td>{config.get('db_path', 'N/A')}</td></tr>" if config.get('db_path') else ''}
+        {f"<tr><td>Output Directory</td><td>{config.get('output_dir', 'N/A')}</td></tr>" if config.get('output_dir') else ''}
+    </table>
 
-    <h3>Testing Period</h3>
-    <p><strong>Start:</strong> {config.get('test_start', 'N/A')}<br>
-    <strong>End:</strong> {config.get('test_end', 'N/A')}</p>
+    <h3>Date Ranges</h3>
+    <table>
+        <tr><th>Parameter</th><th>Value</th></tr>
+        <tr><td>Training Period</td><td>{config.get('train_start', 'N/A')} to {config.get('train_end', 'N/A')}</td></tr>
+        <tr><td>Testing Period</td><td>{config.get('test_start', 'N/A')} to {config.get('test_end', 'N/A')}</td></tr>
+        <tr><td>Number of Seasons</td><td>{config.get('num_seasons', 'N/A')}</td></tr>
+    </table>
 
     <h3>Model Configuration</h3>
     <table>
@@ -548,9 +603,17 @@ class PDFStyleBacktestReportGenerator:
         <tr><td>Model Type</td><td>{config.get('model_type', 'N/A')}</td></tr>
         <tr><td>Feature Config</td><td>{config.get('feature_config', 'N/A')}</td></tr>
         <tr><td>Per-Player Models</td><td>{'Yes' if config.get('per_player_models', False) else 'No'}</td></tr>
-        <tr><td>Recalibration Frequency</td><td>{config.get('recalibrate_days', 'N/A')} days</td></tr>
+        <tr><td>Min Player Games</td><td>{config.get('min_player_games', 'N/A')}</td></tr>
+        <tr><td>Min Benchmark Games</td><td>{config.get('min_games_for_benchmark', 'N/A')}</td></tr>
+        <tr><td>Recalibrate Every</td><td>{config.get('recalibrate_days', 'N/A')} days</td></tr>
         <tr><td>Parallel Jobs</td><td>{config.get('n_jobs', 1)}</td></tr>
+        <tr><td>Save Models</td><td>{'Yes' if config.get('save_models', False) else 'No'}</td></tr>
+        <tr><td>Save Predictions</td><td>{'Yes' if config.get('save_predictions', False) else 'No'}</td></tr>
+        <tr><td>Salary Tiers</td><td>[{salary_tiers_str}]</td></tr>
     </table>
+
+{gpu_config_html}
+{player_filters_html}
 </div>
 
 <div class="page-break"></div>

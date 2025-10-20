@@ -286,6 +286,8 @@ class WalkForwardBacktest:
         # Profiler removed - using simple timing
 
         self.config = {
+            'db_path': db_path,
+            'output_dir': self.output_dir,
             'train_start': train_start,
             'train_end': train_end,
             'test_start': test_start,
@@ -295,11 +297,20 @@ class WalkForwardBacktest:
             'feature_config': feature_config,
             'per_player_models': per_player_models,
             'min_player_games': min_player_games,
+            'min_games_for_benchmark': min_games_for_benchmark,
             'recalibrate_days': recalibrate_days,
             'num_seasons': num_seasons,
+            'salary_tiers': salary_tiers or [0, 4000, 6000, 8000, 15000],
             'n_jobs': n_jobs,
+            'save_models': save_models,
+            'save_predictions': save_predictions,
             'rewrite_models': rewrite_models
         }
+
+        # Add player filters descriptions
+        if player_filters:
+            self.config['player_filters'] = [str(pf) for pf in player_filters]
+
         # Persist evaluation knobs
         self.config['minutes_threshold'] = self.minutes_threshold
         self.config['cmape_cap'] = self.cmape_cap
@@ -728,7 +739,7 @@ class WalkForwardBacktest:
         logger.info("")
 
         slate_times = []
-        unique_player_ids = set()  # Track unique players across all slates
+        self.unique_player_ids = set()  # Track unique players across all slates
 
         for i, test_date in enumerate(tqdm(slate_dates, desc="Backtesting slates")):
             if test_date in completed_slates:
@@ -740,7 +751,7 @@ class WalkForwardBacktest:
                     self.all_predictions.append(merged_df)
                     # Track unique players from checkpoint
                     if 'playerID' in merged_df.columns:
-                        unique_player_ids.update(merged_df['playerID'].unique())
+                        self.unique_player_ids.update(merged_df['playerID'].unique())
                 continue
 
             slate_start_time = time.perf_counter()
@@ -901,7 +912,7 @@ class WalkForwardBacktest:
 
             # Track unique players
             if not merged_df.empty and 'playerID' in merged_df.columns:
-                unique_player_ids.update(merged_df['playerID'].unique())
+                self.unique_player_ids.update(merged_df['playerID'].unique())
 
             self._save_slate_checkpoint(test_date, daily_results, merged_df)
 
@@ -980,7 +991,8 @@ class WalkForwardBacktest:
             remaining_slates = len(slate_dates) - (i + 1)
             eta = remaining_slates * avg_slate_time
             logger.info(f"Slate completed in {self._format_time(slate_elapsed)} (avg: {self._format_time(avg_slate_time)}/slate, ETA: {self._format_time(eta)})")
-
+            
+        
         logger.info(f"Walk-forward backtest complete: {len(self.results)} slates processed")
 
         backtest_elapsed = time.perf_counter() - backtest_start_time
@@ -1820,7 +1832,7 @@ class WalkForwardBacktest:
         logger.info(f"Number of Slates: {len(daily_df)}")
         logger.info(f"Date Range: {daily_df['date'].min()} to {daily_df['date'].max()}")
         logger.info(f"Total Player-Games Evaluated: {daily_df['num_players'].sum():.0f}")
-        logger.info(f"Unique Players Evaluated: {len(unique_player_ids)}")
+        logger.info(f"Unique Players Evaluated: {len(self.unique_player_ids)}")
         logger.info(f"Average Players per Slate: {daily_df['num_players'].mean():.1f}")
         logger.info("")
         logger.info("Model Performance:")
@@ -1985,7 +1997,7 @@ class WalkForwardBacktest:
             'benchmark_mean_wmape': daily_df['benchmark_wmape'].mean() if 'benchmark_wmape' in daily_df.columns else np.nan,
             'mape_improvement': mape_improvement,
             'total_players_evaluated': daily_df['num_players'].sum(),
-            'unique_players_evaluated': len(unique_player_ids),
+            'unique_players_evaluated': len(self.unique_player_ids),
             'avg_players_per_slate': daily_df['num_players'].mean(),
             'daily_results': daily_df,
             'all_predictions': all_predictions_df

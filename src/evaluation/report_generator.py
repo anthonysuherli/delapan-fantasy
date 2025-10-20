@@ -345,25 +345,72 @@ class BacktestReportGenerator:
         """Write backtest configuration section."""
         f.write("<h2>Configuration</h2>\n")
 
+        # General Configuration
+        f.write("<h3>General</h3>\n<ul>\n")
+        if config.get('db_path'):
+            f.write(f"<li><strong>Database:</strong> {config.get('db_path', 'N/A')}</li>\n")
+        if config.get('output_dir'):
+            f.write(f"<li><strong>Output Directory:</strong> {config.get('output_dir', 'N/A')}</li>\n")
+        f.write("</ul>\n\n")
+
+        # Date Ranges
         f.write("<h3>Date Ranges</h3>\n<ul>\n")
         f.write(f"<li><strong>Training Period:</strong> {config.get('train_start', 'N/A')} to {config.get('train_end', 'N/A')}</li>\n")
         f.write(f"<li><strong>Testing Period:</strong> {config.get('test_start', 'N/A')} to {config.get('test_end', 'N/A')}</li>\n")
         f.write(f"<li><strong>Number of Seasons:</strong> {config.get('num_seasons', 'N/A')}</li>\n")
         f.write("</ul>\n\n")
 
+        # Model Configuration
         f.write("<h3>Model Configuration</h3>\n<ul>\n")
         f.write(f"<li><strong>Model Type:</strong> {config.get('model_type', 'N/A')}</li>\n")
         f.write(f"<li><strong>Feature Config:</strong> {config.get('feature_config', 'N/A')}</li>\n")
         f.write(f"<li><strong>Per-Player Models:</strong> {config.get('per_player_models', False)}</li>\n")
-        f.write(f"<li><strong>Recalibrate Days:</strong> {config.get('recalibrate_days', 'N/A')}</li>\n")
+        f.write(f"<li><strong>Min Player Games:</strong> {config.get('min_player_games', 'N/A')}</li>\n")
+        f.write(f"<li><strong>Min Benchmark Games:</strong> {config.get('min_games_for_benchmark', 'N/A')}</li>\n")
+        f.write(f"<li><strong>Recalibrate Every:</strong> {config.get('recalibrate_days', 'N/A')} days</li>\n")
         f.write(f"<li><strong>Parallel Jobs:</strong> {config.get('n_jobs', 1)}</li>\n")
-        f.write(f"<li><strong>Rewrite Models:</strong> {config.get('rewrite_models', False)}</li>\n")
+        f.write(f"<li><strong>Save Models:</strong> {config.get('save_models', False)}</li>\n")
+        f.write(f"<li><strong>Save Predictions:</strong> {config.get('save_predictions', False)}</li>\n")
+        if config.get('salary_tiers'):
+            tiers_str = ', '.join(f"${t:,}" for t in config['salary_tiers'])
+            f.write(f"<li><strong>Salary Tiers:</strong> [{tiers_str}]</li>\n")
         f.write("</ul>\n\n")
 
-        if config.get('model_params'):
+        # GPU Configuration
+        model_params = config.get('model_params', {})
+        if model_params.get('device') and 'cuda' in str(model_params.get('device', '')):
+            f.write("<h3>GPU Configuration</h3>\n<ul>\n")
+            f.write(f"<li><strong>Enabled:</strong> Yes</li>\n")
+            device = model_params.get('device', 'N/A')
+            if ':' in str(device):
+                gpu_id = device.split(':')[1]
+                f.write(f"<li><strong>GPU ID:</strong> {gpu_id}</li>\n")
+            f.write(f"<li><strong>Device:</strong> {device}</li>\n")
+            f.write(f"<li><strong>Tree Method:</strong> {model_params.get('tree_method', 'N/A')}</li>\n")
+            if config.get('model_config_file'):
+                f.write(f"<li><strong>Config File:</strong> {config.get('model_config_file', 'N/A')}</li>\n")
+            f.write("</ul>\n\n")
+
+        # Player Filters
+        if config.get('player_filters'):
+            f.write("<h3>Player Filters</h3>\n<ul>\n")
+            filters = config.get('player_filters', [])
+            for filter_obj in filters:
+                if isinstance(filter_obj, dict):
+                    filter_desc = filter_obj.get('description', str(filter_obj))
+                else:
+                    filter_desc = str(filter_obj)
+                f.write(f"<li>{filter_desc}</li>\n")
+            f.write("</ul>\n\n")
+
+        # Model Hyperparameters
+        if model_params:
             f.write("<h3>Model Hyperparameters</h3>\n<ul>\n")
-            for key, value in config['model_params'].items():
-                f.write(f"<li><strong>{key}:</strong> {value}</li>\n")
+            # Filter out device-related params since they're shown in GPU config
+            excluded_params = {'device', 'tree_method'} if 'cuda' in str(model_params.get('device', '')) else set()
+            for key, value in model_params.items():
+                if key not in excluded_params:
+                    f.write(f"<li><strong>{key}:</strong> {value}</li>\n")
             f.write("</ul>\n\n")
 
         f.write("<hr>\n\n")
