@@ -59,17 +59,11 @@ python scripts/run_backtest_gpu.py --test-start 20250205 --test-end 20250206 \
 panel serve src/interface/panel_backtest_app.py --show
 ```
 
-**Interactive Streamlit UI:**
-```bash
-streamlit run src/interface/backtest_app.py
-```
-
 Requires TANK01_API_KEY in .env file. RapidAPI key from Tank01 Fantasy Stats API.
 
-See [docs/SCRIPTS_GUIDE.md](docs/SCRIPTS_GUIDE.md) for complete scripts documentation.
-See [scripts/README.md](scripts/README.md) for additional details.
-See [docs/GPU_TRAINING.md](docs/GPU_TRAINING.md) for GPU setup and configuration.
-See [docs/PANEL_INTERFACE.md](docs/PANEL_INTERFACE.md) for Panel UI guide.
+See [docs/setup/SCRIPTS_GUIDE.md](docs/setup/SCRIPTS_GUIDE.md) for complete scripts documentation.
+See [docs/optimization/GPU_OPTIMIZATION_GUIDE.md](docs/optimization/GPU_OPTIMIZATION_GUIDE.md) for GPU optimization details.
+See [docs/interfaces/PANEL_INTERFACE.md](docs/interfaces/PANEL_INTERFACE.md) for Panel UI guide.
 
 ## Key Modules
 
