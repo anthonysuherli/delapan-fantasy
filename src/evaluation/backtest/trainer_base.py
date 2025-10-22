@@ -279,26 +279,40 @@ class BacktestTrainer(ABC):
         """Initialize benchmark model."""
         # Load initial training data
         logger.info("="*80)
-        logger.info("LOADING TRAINING DATA")
+        logger.info("LOADING TRAINING DATA FOR BENCHMARK")
         logger.info("="*80)
 
         if self.backtest.enable_feature_caching:
+            logger.info(f"Loading from cache with filtered_player_ids={self.backtest.filtered_player_ids}")
             training_data = self.backtest._load_training_data_cached(self.backtest.filtered_player_ids)
         else:
             if self.backtest.filtered_player_ids:
+                logger.info(f"Loading {len(self.backtest.filtered_player_ids)} filtered players from {self.backtest.train_end} back {self.backtest.num_seasons} seasons")
                 training_data = self.backtest.loader.load_historical_player_logs(
                     end_date=self.backtest.train_end,
                     num_seasons=self.backtest.num_seasons,
                     player_ids=self.backtest.filtered_player_ids
                 )
             else:
+                logger.info(f"Loading all players from {self.backtest.train_end} back {self.backtest.num_seasons} seasons")
                 training_data = self.backtest.loader.load_historical_player_logs(
                     end_date=self.backtest.train_end,
                     num_seasons=self.backtest.num_seasons
                 )
 
+        logger.info(f"Training data loaded: shape={training_data.shape}, columns={list(training_data.columns) if not training_data.empty else 'EMPTY'}")
+
         if training_data.empty:
-            logger.warning("No training data loaded")
+            logger.warning("No training data loaded - benchmark will be skipped")
+            self.benchmark = None
+            return
+
+        # Validate required columns
+        if 'playerID' not in training_data.columns:
+            logger.error(f"ERROR: Training data missing 'playerID' column!")
+            logger.error(f"Available columns: {list(training_data.columns)}")
+            logger.error(f"Training data:\n{training_data.head()}")
+            self.benchmark = None
             return
 
         # Initialize benchmark
