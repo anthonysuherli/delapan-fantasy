@@ -1,14 +1,26 @@
 #!/usr/bin/env python
 """
-Run walk-forward backtest with per-player or slate-level models.
+Run walk-forward backtest with lineup generation using pydfs-lineup-optimizer.
 
-This script implements the same functionality as backtest_season.ipynb but
-as a command-line tool for easier automation and CI/CD integration.
+This script extends run_backtest.py by generating optimal DraftKings lineups
+for each slate based on model predictions, evaluating lineup performance,
+and exporting lineups in DraftKings CSV format.
 
 Usage:
-    python scripts/run_backtest.py --test-start 20250205 --test-end 20250206
-    python scripts/run_backtest.py --test-start 20250201 --test-end 20250228 --per-player
-    python scripts/run_backtest.py --test-start 20250201 --test-end 20250228 --feature-config base_features
+    # Cash game strategy with 1 lineup
+    python scripts/run_backtest_with_lineups.py \
+        --test-start 20250205 --test-end 20250206 \
+        --contest-config cash_game.json --num-lineups 1
+
+    # GPP tournament strategy with 20 lineups
+    python scripts/run_backtest_with_lineups.py \
+        --test-start 20250201 --test-end 20250210 --per-player \
+        --contest-config gpp_tournament.json --num-lineups 20
+
+    # Multi-entry with custom config
+    python scripts/run_backtest_with_lineups.py \
+        --test-start 20250201 --test-end 20250228 --per-player \
+        --contest-config config/contests/multi_entry.json --num-lineups 50
 """
 
 import argparse
@@ -21,23 +33,25 @@ from datetime import datetime, timedelta
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.evaluation.backtest import WalkForwardBacktest
+from src.optimization.backtest_lineup_integration import BacktestWithLineups
 from src.data.loaders.historical_loader import HistoricalDataLoader
-from src.filters import ColumnFilter, InjuryFilter, CompositeFilter
+from src.filters import ColumnFilter, InjuryFilter
 from src.filters.player_filters import PlayerIDFilter, PlayerNameFilter, PlayerIDFromCSVFilter
 
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Run walk-forward backtest with benchmark comparison"
+        description="Run walk-forward backtest with lineup generation and evaluation"
     )
 
+    # Data arguments
     parser.add_argument(
         "--data-dir",
         default="data",
         help="Base data directory containing parquet files (default: data)"
     )
 
+    # Test period arguments
     parser.add_argument(
         "--test-start",
         required=True,
@@ -57,6 +71,7 @@ def parse_args():
         help="Number of seasons for training data (default: 1)"
     )
 
+    # Model arguments
     parser.add_argument(
         "--model-type",
         choices=["xgboost", "random_forest", "linear"],
@@ -67,15 +82,13 @@ def parse_args():
     parser.add_argument(
         "--feature-config",
         default="default_features",
-        help="Feature configuration name or comma-separated list to combine. "
-             "Examples: 'default_features', 'base_features,opponent_features', "
-             "'default_features,opponent_features' (default: default_features)"
+        help="Feature configuration name or comma-separated list"
     )
 
     parser.add_argument(
         "--model-config",
         default=None,
-        help="Path to YAML model configuration file with optimized hyperparameters"
+        help="Path to YAML model configuration file"
     )
 
     parser.add_argument(
@@ -105,6 +118,50 @@ def parse_args():
         help="Recalibrate model every N days (default: 7)"
     )
 
+    # Lineup generation arguments
+    parser.add_argument(
+        "--generate-lineups",
+        action="store_true",
+        default=True,
+        help="Generate lineups (default: True, use --no-generate-lineups to disable)"
+    )
+
+    parser.add_argument(
+        "--no-generate-lineups",
+        action="store_false",
+        dest="generate_lineups",
+        help="Disable lineup generation"
+    )
+
+    parser.add_argument(
+        "--contest-config",
+        default="cash_game.json",
+        help="Contest configuration file (default: cash_game.json). "
+             "Available: cash_game.json, gpp_tournament.json, single_entry.json, multi_entry.json"
+    )
+
+    parser.add_argument(
+        "--num-lineups",
+        type=int,
+        default=10,
+        help="Number of lineups to generate per slate (default: 10)"
+    )
+
+    parser.add_argument(
+        "--track-lineup-performance",
+        action="store_true",
+        default=True,
+        help="Track lineup performance against actuals (default: True)"
+    )
+
+    parser.add_argument(
+        "--no-track-lineup-performance",
+        action="store_false",
+        dest="track_lineup_performance",
+        help="Disable lineup performance tracking"
+    )
+
+    # Output arguments
     parser.add_argument(
         "--output-dir",
         default="data/backtest_results",
@@ -123,6 +180,7 @@ def parse_args():
         help="Do not save predictions to parquet"
     )
 
+    # XGBoost hyperparameters
     parser.add_argument(
         "--max-depth",
         type=int,
@@ -144,6 +202,7 @@ def parse_args():
         help="XGBoost n_estimators (default: 200)"
     )
 
+    # Other arguments
     parser.add_argument(
         "--verbose",
         action="store_true",
@@ -154,19 +213,19 @@ def parse_args():
         "--n-jobs",
         type=int,
         default=-1,
-        help="Number of parallel jobs for per-player model training (default: -1 for all cores, use 1 for sequential)"
+        help="Number of parallel jobs for per-player model training (default: -1 for all cores)"
     )
 
     parser.add_argument(
         "--rewrite-models",
         action="store_true",
-        help="Force retraining of models even if cached versions exist"
+        help="Force retraining of models"
     )
 
     parser.add_argument(
         "--resume-from-run",
         default=None,
-        help="Resume from an existing run by providing the timestamp (e.g., 20250205_143022)"
+        help="Resume from an existing run timestamp (e.g., 20250205_143022)"
     )
 
     parser.add_argument(
@@ -198,18 +257,19 @@ def parse_args():
         help="Weight type for WMAPE (default: actual_fpts)"
     )
 
+    # Player filtering arguments
     parser.add_argument(
         "--filter-salary-min",
         type=int,
         default=None,
-        help="Minimum salary filter (default: None)"
+        help="Minimum salary filter"
     )
 
     parser.add_argument(
         "--filter-salary-max",
         type=int,
         default=None,
-        help="Maximum salary filter (default: None)"
+        help="Maximum salary filter"
     )
 
     parser.add_argument(
@@ -234,31 +294,27 @@ def parse_args():
         "--filter-player-ids",
         type=str,
         default=None,
-        help="Filter by player ID(s). Comma or space-separated list. "
-             "Examples: '123,456,789' or '123 456 789' or single ID '123'"
+        help="Filter by player ID(s). Comma or space-separated list"
     )
 
     parser.add_argument(
         "--filter-player-names",
         type=str,
         default=None,
-        help="Filter by player name(s). Comma or space-separated list. "
-             "Supports partial matches (case-insensitive). "
-             "Examples: 'LeBron,Durant' or 'LeBron Durant' or 'LeBron'"
+        help="Filter by player name(s). Comma or space-separated list"
     )
 
     parser.add_argument(
         "--filter-players-csv",
         type=str,
         default=None,
-        help="Filter by player IDs from CSV file. CSV must contain 'playerID' column. "
-             "Example: 'my_players.csv' or '/path/to/players.csv'"
+        help="Filter by player IDs from CSV file"
     )
 
     parser.add_argument(
         "--interactive",
         action="store_true",
-        help="Interactive mode: pause after each slate so you can review results before proceeding"
+        help="Interactive mode: pause after each slate"
     )
 
     return parser.parse_args()
@@ -274,16 +330,32 @@ def main():
     )
 
     print("="*80)
-    print("NBA DFS WALK-FORWARD BACKTEST")
+    print("NBA DFS WALK-FORWARD BACKTEST WITH LINEUP GENERATION")
     print("="*80)
+
+    # Data directories
     print(f"Data Directory: {args.data_dir}")
     print(f"Output Directory: {args.output_dir}")
+
+    # Backtest configuration
     print(f"Test Period: {args.test_start} to {args.test_end}")
     print(f"Model Type: {args.model_type}")
     print(f"Feature Config: {args.feature_config}")
     print(f"Per-Player Models: {args.per_player}")
     print(f"Number of Seasons: {args.num_seasons}")
     print(f"Parallel Jobs: {args.n_jobs} ({'all cores' if args.n_jobs == -1 else 'sequential' if args.n_jobs == 1 else f'{args.n_jobs} workers'})")
+
+    # Lineup generation configuration
+    print("\n" + "="*80)
+    print("LINEUP GENERATION SETTINGS")
+    print("="*80)
+    print(f"Generate Lineups: {args.generate_lineups}")
+    if args.generate_lineups:
+        print(f"Contest Config: {args.contest_config}")
+        print(f"Number of Lineups: {args.num_lineups}")
+        print(f"Track Performance: {args.track_lineup_performance}")
+
+    print("\n" + "="*80)
     print(f"Rewrite Models: {args.rewrite_models}")
     print(f"Save Models: {not args.no_save_models}")
     print(f"Save Predictions: {not args.no_save_predictions}")
@@ -293,6 +365,7 @@ def main():
     print("="*80)
     print()
 
+    # Calculate training period
     test_end_dt = datetime.strptime(args.test_end, '%Y%m%d')
     train_end = (test_end_dt - timedelta(days=1)).strftime('%Y%m%d')
 
@@ -303,6 +376,7 @@ def main():
 
     print(f"Calculated Training Period: {train_start} to {train_end}\n")
 
+    # Load model configuration
     if args.model_config:
         print(f"Loading model configuration from: {args.model_config}")
         with open(args.model_config, 'r') as f:
@@ -335,7 +409,9 @@ def main():
         }
         print("Using default hyperparameters from command-line arguments\n")
 
+    # Build player filters
     player_filters = []
+
     if args.filter_salary_min is not None:
         salary_filter = ColumnFilter('salary', '>=', args.filter_salary_min)
         player_filters.append(salary_filter)
@@ -363,7 +439,6 @@ def main():
         print(f"Filter: exclude injury status {', '.join(excluded)}")
 
     if args.filter_player_ids:
-        # Parse comma or space-separated player IDs
         player_ids = [pid.strip() for pid in args.filter_player_ids.replace(',', ' ').split() if pid.strip()]
         if player_ids:
             player_id_filter = PlayerIDFilter(player_ids)
@@ -374,7 +449,6 @@ def main():
             print(f"Filter: player ID in [{ids_display}]")
 
     if args.filter_player_names:
-        # Parse comma or space-separated player names
         player_names = [name.strip() for name in args.filter_player_names.replace(',', '|').split('|') if name.strip()]
         if player_names:
             player_name_filter = PlayerNameFilter(player_names, case_sensitive=False)
@@ -399,7 +473,8 @@ def main():
     if player_filters:
         print(f"\nTotal filters: {len(player_filters)}\n")
 
-    backtest = WalkForwardBacktest(
+    # Create backtest with lineup generation
+    backtest = BacktestWithLineups(
         train_start=train_start,
         train_end=train_end,
         test_start=args.test_start,
@@ -424,176 +499,44 @@ def main():
         cmape_cap=args.cmape_cap,
         wmape_weight=args.wmape_weight,
         player_filters=player_filters if player_filters else None,
-        interactive=args.interactive
+        interactive=args.interactive,
+        # Lineup generation specific parameters
+        generate_lineups=args.generate_lineups,
+        contest_config=args.contest_config,
+        num_lineups=args.num_lineups,
+        track_lineup_performance=args.track_lineup_performance
     )
 
-    results = backtest.run()
+    # Run backtest with lineup generation
+    results = backtest.run_with_lineups()
 
     if 'error' in results:
         print(f"\nERROR: {results['error']}")
         sys.exit(1)
 
-    output_path = backtest.run_output_dir
-
-    csv_path = output_path / f"backtest_results_{args.test_start}_to_{args.test_end}.csv"
-    results['daily_results'].to_csv(csv_path, index=False)
-    print(f"\nDaily results saved to: {csv_path}")
-
-    summary_path = output_path / f"summary_{args.test_start}_to_{args.test_end}.md"
-    with open(summary_path, 'w') as f:
-        f.write('# Backtest Results Summary\n\n')
-
-        f.write('## Overview\n\n')
-        f.write(f"**Date Range:** {results['date_range']}  \n")
-        f.write(f"**Number of Slates:** {results['num_slates']}  \n")
-        f.write(f"**Total Players Evaluated:** {results['total_players_evaluated']:.0f}  \n")
-        f.write(f"**Average Players per Slate:** {results['avg_players_per_slate']:.1f}  \n\n")
-
-        f.write('## Model Performance\n\n')
-        f.write('**MAPE (Mean Absolute Percentage Error):** Target <30% for elite players ($8k+), <50% overall. Lower is better.  \n')
-        f.write('**Correlation:** Strong correlation >0.7, moderate 0.5-0.7, weak <0.5. Higher is better.  \n')
-        f.write('**RMSE/MAE:** Lower values indicate better predictions. Context-dependent on fantasy points scale.  \n\n')
-        f.write('| Metric | Value |\n')
-        f.write('|--------|-------|\n')
-        f.write(f"| Mean MAPE | {results['model_mean_mape']:.2f}% |\n")
-        f.write(f"| Median MAPE | {results['model_median_mape']:.2f}% |\n")
-        f.write(f"| Std MAPE | {results['model_std_mape']:.2f}% |\n")
-        f.write(f"| Mean RMSE | {results['model_mean_rmse']:.2f} |\n")
-        f.write(f"| Std RMSE | {results['model_std_rmse']:.2f} |\n")
-        f.write(f"| Mean MAE | {results['model_mean_mae']:.2f} |\n")
-        f.write(f"| Mean Correlation | {results['model_mean_correlation']:.3f} |\n")
-        f.write(f"| Std Correlation | {results['model_std_correlation']:.3f} |\n\n")
-
-        f.write('## Benchmark Performance\n\n')
-        f.write('| Metric | Value |\n')
-        f.write('|--------|-------|\n')
-        f.write(f"| Mean MAPE | {results['benchmark_mean_mape']:.2f}% |\n")
-        f.write(f"| Median MAPE | {results['benchmark_median_mape']:.2f}% |\n\n")
-
-        f.write('## Model vs Benchmark\n\n')
-        f.write('**Improvement Interpretation:** Positive values indicate model outperforms baseline. ')
-        f.write('Target >5% improvement for meaningful practical value. ')
-        f.write('Improvement >10% indicates strong model performance.  \n\n')
-        improvement = results['mape_improvement']
-        status = 'Better' if improvement > 0 else 'Worse'
-        f.write(f"**MAPE Improvement:** {improvement:+.2f}% ({status})  \n\n")
-
-        charts_dir = output_path / 'charts'
-        if charts_dir.exists() and (charts_dir / 'model_vs_benchmark.png').exists():
-            f.write('![Model vs Benchmark](charts/model_vs_benchmark.png)\n\n')
-
-        if 'statistical_test' in results:
-            f.write('## Statistical Significance\n\n')
-            f.write('**p-value:** <0.05 indicates statistically significant difference. Lower is stronger evidence.  \n')
-            f.write('**Cohen\'s d:** Small effect 0.2-0.5, medium 0.5-0.8, large >0.8. Measures practical significance.  \n')
-            f.write('**Interpretation:** Both statistical significance (p<0.05) and practical significance (d>0.5) required for confident model superiority.  \n\n')
-            test = results['statistical_test']
-            f.write('| Test | Value |\n')
-            f.write('|------|-------|\n')
-            f.write(f"| t-statistic | {test['t_statistic']:.4f} |\n")
-            f.write(f"| p-value | {test['p_value']:.6f} |\n")
-            f.write(f"| Cohen's d | {test['cohens_d']:.4f} |\n")
-            f.write(f"| Effect size | {test['effect_size']} |\n\n")
-
-        if 'tier_comparison' in results:
-            f.write('## Performance by Salary Tier\n\n')
-            f.write('**Elite Players ($8k+):** Target <30% MAPE. Most critical for DFS optimization.  \n')
-            f.write('**Mid-Tier ($5k-$8k):** Target <40% MAPE. Balance of salary efficiency and reliability.  \n')
-            f.write('**Budget (<$5k):** Higher MAPE acceptable. Low output creates percentage inflation.  \n\n')
-            tier_df = results['tier_comparison']
-            f.write('| Tier | Count | Model MAPE | Benchmark MAPE | Improvement | Status |\n')
-            f.write('|------|-------|------------|----------------|-------------|--------|\n')
-            for _, row in tier_df.iterrows():
-                tier = str(row['salary_tier'])
-                count = int(row['count'])
-                model_mape = row['model_mape']
-                bench_mape = row['benchmark_mape']
-                imp = row['mape_improvement']
-                stat = 'Better' if imp > 0 else 'Worse'
-                f.write(f"| {tier} | {count} | {model_mape:.1f}% | {bench_mape:.1f}% | {imp:+.1f}% | {stat} |\n")
-            f.write('\n')
-
-            if charts_dir.exists() and (charts_dir / 'salary_tier_performance.png').exists():
-                f.write('![Salary Tier Performance](charts/salary_tier_performance.png)\n\n')
-
-        f.write('## Visualizations\n\n')
-
-        if charts_dir.exists():
-            chart_files = [
-                ('daily_mape.png', 'Daily MAPE Over Time'),
-                ('error_distribution.png', 'Error Distribution'),
-                ('correlation_scatter.png', 'Prediction vs Actual Correlation'),
-                ('metrics_comparison.png', 'Metrics Comparison')
-            ]
-
-            for chart_file, title in chart_files:
-                chart_path = charts_dir / chart_file
-                if chart_path.exists():
-                    f.write(f'### {title}\n\n')
-                    f.write(f'![{title}](charts/{chart_file})\n\n')
-
-    print(f"Summary saved to: {summary_path}")
-
-    if 'tier_comparison' in results:
-        tier_path = output_path / f"tier_comparison_{args.test_start}_to_{args.test_end}.csv"
-        results['tier_comparison'].to_csv(tier_path, index=False)
-        print(f"Tier comparison saved to: {tier_path}")
-
-    if 'report_path' in results:
-        print(f"\nComprehensive report: {results['report_path']}")
-
-    print("\n" + "="*80)
-    print("MODEL VS BENCHMARK COMPARISON")
-    print("="*80)
-
-    model_mape = results.get('model_mean_mape', 0)
-    bench_mape = results.get('benchmark_mean_mape', 0)
-    improvement = results.get('mape_improvement', 0)
-
-    print(f"\nModel Performance:")
-    print(f"  MAPE:        {model_mape:.2f}%")
-    print(f"  RMSE:        {results.get('model_mean_rmse', 0):.2f}")
-    print(f"  MAE:         {results.get('model_mean_mae', 0):.2f}")
-    print(f"  Correlation: {results.get('model_mean_correlation', 0):.3f}")
-
-    print(f"\nBenchmark Performance:")
-    print(f"  MAPE:        {bench_mape:.2f}%")
-
-    status = "[MODEL BETTER]" if improvement > 0 else "[BENCHMARK BETTER]"
-    print(f"\nImprovement:   {improvement:+.2f}% {status}")
-
-    if 'statistical_test' in results:
-        test = results['statistical_test']
-        sig = "[SIGNIFICANT]" if test['p_value'] < 0.05 else "[NOT SIGNIFICANT]"
-        print(f"Significance:  p={test['p_value']:.4f} {sig}")
-        print(f"Effect Size:   {test['effect_size']} (d={test['cohens_d']:.4f})")
-
-    if 'tier_comparison' in results:
-        print("\n" + "-"*80)
-        print("PERFORMANCE BY SALARY TIER")
-        print("-"*80)
-        tier_df = results['tier_comparison']
-        print(f"\n{'Tier':<15} {'Count':>8} {'Model MAPE':>12} {'Bench MAPE':>12} {'Improve':>10} {'Status':>10}")
-        print("-"*80)
-        for _, row in tier_df.iterrows():
-            tier = str(row['salary_tier'])[:14]
-            count = int(row['count'])
-            model = row['model_mape']
-            bench = row['benchmark_mape']
-            imp = row['mape_improvement']
-            stat = "[Better]" if imp > 0 else "[Worse]"
-            print(f"{tier:<15} {count:>8} {model:>11.1f}% {bench:>11.1f}% {imp:>9.1f}% {stat:>10}")
-        print("-"*80)
-
-    charts_dir = output_path / 'charts'
-    if charts_dir.exists():
-        chart_count = len(list(charts_dir.glob('*.png')))
-        print(f"\nGenerated {chart_count} visualization charts in: {charts_dir}")
-
     print("\n" + "="*80)
     print("BACKTEST COMPLETE")
     print("="*80)
-    print(f"\nAll outputs saved to: {output_path}")
+    print(f"Test Slates: {results.get('test_slates', 0)}")
+    print(f"Total Players Evaluated: {results.get('total_players', 0)}")
+
+    if 'lineup_summary' in results:
+        lineup_summary = results['lineup_summary']
+        print("\nLINEUP GENERATION SUMMARY:")
+        print(f"  Total Lineups Generated: {lineup_summary.get('total_lineups', 0)}")
+        print(f"  Avg Projected vs Actual Correlation: {lineup_summary.get('avg_correlation', 0):.3f}")
+        print(f"  Avg Error: {lineup_summary.get('avg_error_pct', 0):.1f}%")
+
+    print("\nResults saved to:")
+    print(f"  {results.get('output_dir', args.output_dir)}")
+
+    if args.generate_lineups:
+        print(f"\nLineup files:")
+        print(f"  CSV (DraftKings upload): {results.get('output_dir')}/lineups/*_lineups.csv")
+        print(f"  JSON (full details): {results.get('output_dir')}/lineups/*_lineups.json")
+        print(f"  Performance report: {results.get('output_dir')}/lineup_performance_report.csv")
+
+    print("="*80)
 
 
 if __name__ == "__main__":

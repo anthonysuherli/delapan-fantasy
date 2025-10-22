@@ -1,44 +1,46 @@
-import sqlite3
+import duckdb
 import pandas as pd
 from pathlib import Path
 from typing import Dict, Any, Optional
 import logging
-from src.config.paths import DB_PATH, DATA_DIR
+from src.config.paths import DATA_DIR
 
 logger = logging.getLogger(__name__)
 
 
 class LocalDataClient:
+    """
+    Local data client for accessing historical player data from parquet files.
+    Uses DuckDB for querying parquet files efficiently.
+    """
 
-    def __init__(self, db_path: str = None, data_dir: str = None):
-        if db_path is None:
-            db_path = DB_PATH
+    def __init__(self, data_dir: str = None):
         if data_dir is None:
             data_dir = DATA_DIR
 
-        self.db_path = Path(db_path)
         self.data_dir = Path(data_dir)
+        self.conn = duckdb.connect(':memory:')
         self.request_count = 0
         self.rate_limit = 999999
 
     def get_player_game_logs(self, player_id: str, season: Optional[str] = None) -> Dict[str, Any]:
         try:
-            conn = sqlite3.connect(self.db_path)
+            # Build path to player logs parquet files
+            path_pattern = str(self.data_dir / 'player_logs_extracted' / '**' / '*.parquet')
 
-            query = """
-                SELECT * FROM player_logs
-                WHERE playerID = ?
+            # Build query with player filter
+            query = f"""
+                SELECT * FROM read_parquet('{path_pattern}', hive_partitioning=1)
+                WHERE playerID = '{player_id}'
             """
-            params = [player_id]
 
+            # Add season filter if provided
             if season:
-                query += " AND gameDate LIKE ?"
-                params.append(f"{season}%")
+                query += f" AND gameDate LIKE '{season}%'"
 
             query += " ORDER BY gameDate DESC"
 
-            df = pd.read_sql_query(query, conn, params=params)
-            conn.close()
+            df = self.conn.execute(query).df()
 
             self.request_count += 1
             logger.info(f"Loaded {len(df)} game logs for player {player_id}, season {season}")
@@ -60,3 +62,8 @@ class LocalDataClient:
 
     def get_remaining_requests(self) -> int:
         return self.rate_limit - self.request_count
+
+    def __del__(self):
+        """Close DuckDB connection on cleanup"""
+        if hasattr(self, 'conn'):
+            self.conn.close()

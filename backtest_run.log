@@ -1,1562 +1,0 @@
-2025-10-18 14:22:26,257 - __main__ - INFO - ================================================================================
-2025-10-18 14:22:26,257 - __main__ - INFO - GPU-ACCELERATED BACKTEST CONFIGURATION
-2025-10-18 14:22:26,257 - __main__ - INFO - ================================================================================
-2025-10-18 14:22:26,257 - __main__ - INFO - Database: nba_dfs.db
-2025-10-18 14:22:26,257 - __main__ - INFO - Training period: 20241001 to 20250429
-2025-10-18 14:22:26,258 - __main__ - INFO - Testing period: 20250201 to 20250430
-2025-10-18 14:22:26,258 - __main__ - INFO - Model type: xgboost
-2025-10-18 14:22:26,258 - __main__ - INFO - Model config: config/models/xgboost_default.yaml
-2025-10-18 14:22:26,258 - __main__ - INFO - Feature config: default_features
-2025-10-18 14:22:26,258 - __main__ - INFO - Per-player models: True
-2025-10-18 14:22:26,258 - __main__ - INFO - GPU device: 0
-2025-10-18 14:22:26,258 - __main__ - INFO - Parallel jobs: 32 (32 workers)
-2025-10-18 14:22:26,258 - __main__ - INFO - Data loader workers: 16
-2025-10-18 14:22:26,258 - __main__ - INFO - GPU data caching: Disabled
-2025-10-18 14:22:26,258 - __main__ - INFO - ================================================================================
-2025-10-18 14:22:26,260 - __main__ - INFO - Loaded model parameters from config/models/xgboost_default.yaml
-2025-10-18 14:22:26,260 - __main__ - INFO - GPU configuration: tree_method=hist, gpu_id=0 device=cuda:0
-2025-10-18 14:22:26,260 - __main__ - INFO - 
-2025-10-18 14:22:26,260 - __main__ - INFO - Filter: salary >= 9000
-2025-10-18 14:22:26,260 - __main__ - INFO - Total filters: 1
-2025-10-18 14:22:26,260 - __main__ - INFO - 
-2025-10-18 14:22:26,260 - __main__ - INFO - Initializing backtest with GPU-optimized configuration...
-2025-10-18 14:22:26,260 - src.walk_forward_backtest - WARNING - train_end (20250429) is after test_start (20250201). Training data will overlap with test window.
-2025-10-18 14:22:26,260 - src.data.storage.sqlite_storage - INFO - Initialized SQLiteStorage with database: nba_dfs.db
-2025-10-18 14:22:26,264 - src.utils.feature_config - INFO - Loaded feature config: Default Feature Set
-2025-10-18 14:22:26,264 - src.utils.feature_config - INFO - Added RollingStatsTransformer: windows=[3, 5, 10], stats=21, include_std=True
-2025-10-18 14:22:26,264 - src.utils.feature_config - INFO - Added EWMATransformer: span=5, stats=21
-2025-10-18 14:22:26,264 - src.utils.feature_config - INFO - Added TargetTransformer: target_col=fpts, shift_periods=-1
-2025-10-18 14:22:26,264 - src.utils.feature_config - INFO - Added InjuryTransformer
-2025-10-18 14:22:26,265 - src.walk_forward_backtest - INFO - Initialized WalkForwardBacktest
-2025-10-18 14:22:26,265 - src.walk_forward_backtest - INFO - Architecture: Default (data in project directory)
-2025-10-18 14:22:26,265 - src.walk_forward_backtest - INFO - Training period: 20241001 to 20250429
-2025-10-18 14:22:26,265 - src.walk_forward_backtest - INFO - Testing period: 20250201 to 20250430
-2025-10-18 14:22:26,265 - src.walk_forward_backtest - INFO - Per-player models: True
-2025-10-18 14:22:26,265 - src.walk_forward_backtest - INFO - Feature config: default_features
-2025-10-18 14:22:26,265 - src.walk_forward_backtest - INFO - Recalibrate every 7 days
-2025-10-18 14:22:26,265 - src.walk_forward_backtest - INFO - Rewrite models: False
-2025-10-18 14:22:26,265 - src.walk_forward_backtest - INFO - Save models: True
-2025-10-18 14:22:26,265 - src.walk_forward_backtest - INFO - Save predictions: True
-2025-10-18 14:22:26,265 - src.walk_forward_backtest - INFO - Parallel jobs: 32 (32 workers)
-2025-10-18 14:22:26,265 - src.walk_forward_backtest - INFO - Using YAML-configured feature pipeline
-2025-10-18 14:22:26,265 - src.walk_forward_backtest - INFO - Metrics: minutes_threshold=12, cmape_cap=8.0, wmape_weight=actual_fpts
-2025-10-18 14:22:26,265 - src.walk_forward_backtest - INFO - Player filters: 1 filters
-2025-10-18 14:22:26,265 - src.walk_forward_backtest - INFO -   - ColumnFilter(column='salary', operator='>=', value=9000)
-2025-10-18 14:22:26,265 - __main__ - INFO - Starting GPU-accelerated backtest...
-2025-10-18 14:22:26,265 - __main__ - INFO - 
-2025-10-18 14:22:26,265 - src.walk_forward_backtest - INFO - Starting NEW run: 20251018_142226
-2025-10-18 14:22:26,267 - src.walk_forward_backtest - INFO - ================================================================================
-2025-10-18 14:22:26,267 - src.walk_forward_backtest - INFO - STARTING WALK-FORWARD BACKTEST
-2025-10-18 14:22:26,268 - src.walk_forward_backtest - INFO - ================================================================================
-2025-10-18 14:22:26,268 - src.walk_forward_backtest - INFO - Run timestamp: 20251018_142226
-2025-10-18 14:22:26,268 - src.walk_forward_backtest - INFO - Output directory: data\outputs\20251018_142226
-2025-10-18 14:22:26,268 - src.walk_forward_backtest - INFO - Training period: 20241001 to 20250429
-2025-10-18 14:22:26,268 - src.walk_forward_backtest - INFO - Testing period: 20250201 to 20250430
-2025-10-18 14:22:26,268 - src.walk_forward_backtest - INFO - Model: xgboost
-2025-10-18 14:22:26,268 - src.walk_forward_backtest - INFO - ================================================================================
-2025-10-18 14:22:26,275 - src.data.loaders.historical_loader - INFO - Found 80 slate dates from 20250201 to 20250430
-2025-10-18 14:22:26,275 - src.walk_forward_backtest - INFO - ================================================================================
-2025-10-18 14:22:26,275 - src.walk_forward_backtest - INFO - INITIALIZING BENCHMARK
-2025-10-18 14:22:26,275 - src.walk_forward_backtest - INFO - ================================================================================
-2025-10-18 14:22:26,275 - src.walk_forward_backtest - INFO - Loading training data for benchmark...
-2025-10-18 14:22:26,275 - src.data.loaders.historical_loader - INFO - Loading historical player logs (from 20241001 to 20250429)
-2025-10-18 14:22:26,462 - src.data.loaders.historical_loader - INFO - Loaded 27183 player logs from 2024-10-22 00:00:00 to 2025-04-28 00:00:00
-2025-10-18 14:22:26,462 - src.walk_forward_backtest - INFO - Loaded 27183 training records
-2025-10-18 14:22:26,462 - src.walk_forward_backtest - INFO - Building features for benchmark...
-2025-10-18 14:22:26,785 - src.walk_forward_backtest - INFO - Calculated fantasy points for training data
-
-Backtesting 80 slates from 20250201 to 20250430
-
-Fitting transformers:   0%|          | 0/4 [00:00<?, ?it/s]                                                           Applying transformers:   0%|          | 0/4 [00:00<?, ?it/s]Applying transformers:  25%|##5       | 1/4 [00:11<00:34, 11.63s/it]Applying transformers:  50%|#####     | 2/4 [00:12<00:11,  5.53s/it]                                                                    2025-10-18 14:22:39,738 - src.walk_forward_backtest - INFO - Generated 27183 feature rows with 147 features
-2025-10-18 14:22:39,772 - src.walk_forward_backtest - INFO - Qualified players: 545 (min_games=5)
-2025-10-18 14:22:39,772 - src.walk_forward_backtest - INFO - Initializing SeasonAverageBenchmark...
-2025-10-18 14:22:39,777 - src.evaluation.benchmarks.season_average - INFO - Fitted benchmark for 545 players (min_games=5)
-2025-10-18 14:22:39,777 - src.walk_forward_backtest - INFO - Benchmark fitted successfully for 545 players
-2025-10-18 14:22:39,777 - src.walk_forward_backtest - INFO - Top 5 benchmark averages:
-2025-10-18 14:22:39,781 - src.walk_forward_backtest - INFO -   Nikola Jokic: 66.20 fpts
-2025-10-18 14:22:39,785 - src.walk_forward_backtest - INFO -   Giannis Antetokounmpo: 59.35 fpts
-2025-10-18 14:22:39,787 - src.walk_forward_backtest - INFO -   Luka Doncic: 52.92 fpts
-2025-10-18 14:22:39,790 - src.walk_forward_backtest - INFO -   Victor Wembanyama: 52.73 fpts
-2025-10-18 14:22:39,792 - src.walk_forward_backtest - INFO -   Shai Gilgeous-Alexander: 52.32 fpts
-2025-10-18 14:22:39,792 - src.walk_forward_backtest - INFO - Benchmark initialization completed in 13.5s
-2025-10-18 14:22:39,793 - src.walk_forward_backtest - INFO - ================================================================================
-2025-10-18 14:22:39,793 - src.walk_forward_backtest - INFO - 
-Backtesting slates:   0%|          | 0/80 [00:00<?, ?it/s]2025-10-18 14:22:39,793 - src.walk_forward_backtest - INFO - 
-2025-10-18 14:22:39,793 - src.walk_forward_backtest - INFO - Processing slate 1/80: 20250201
-2025-10-18 14:22:39,793 - src.data.loaders.historical_loader - INFO - Loading slate data for 20250201
-
-Loading slate data:   0%|          | 0/4 [00:00<?, ?it/s][A
-                                                         [A2025-10-18 14:22:39,802 - src.data.loaders.historical_loader - INFO - Loaded slate data: 0 salaries, 9 games
-2025-10-18 14:22:39,802 - src.data.loaders.historical_loader - INFO - Loading injury data for 20250201
-2025-10-18 14:22:39,802 - src.data.loaders.historical_loader - INFO - Loaded 6 injury records for 20250201
-2025-10-18 14:22:39,803 - src.walk_forward_backtest - WARNING - No salary data for 20250201, skipping
-2025-10-18 14:22:39,803 - src.walk_forward_backtest - INFO - 
-2025-10-18 14:22:39,803 - src.walk_forward_backtest - INFO - Processing slate 2/80: 20250202
-2025-10-18 14:22:39,803 - src.data.loaders.historical_loader - INFO - Loading slate data for 20250202
-
-Loading slate data:   0%|          | 0/4 [00:00<?, ?it/s][A
-                                                         [A2025-10-18 14:22:39,810 - src.data.loaders.historical_loader - INFO - Loaded slate data: 0 salaries, 5 games
-2025-10-18 14:22:39,810 - src.data.loaders.historical_loader - INFO - Loading injury data for 20250202
-2025-10-18 14:22:39,811 - src.data.loaders.historical_loader - INFO - Loaded 7 injury records for 20250202
-2025-10-18 14:22:39,811 - src.walk_forward_backtest - WARNING - No salary data for 20250202, skipping
-2025-10-18 14:22:39,812 - src.walk_forward_backtest - INFO - 
-2025-10-18 14:22:39,812 - src.walk_forward_backtest - INFO - Processing slate 3/80: 20250203
-2025-10-18 14:22:39,812 - src.data.loaders.historical_loader - INFO - Loading slate data for 20250203
-
-Loading slate data:   0%|          | 0/4 [00:00<?, ?it/s][A
-                                                         [A2025-10-18 14:22:39,819 - src.data.loaders.historical_loader - INFO - Loaded slate data: 0 salaries, 10 games
-2025-10-18 14:22:39,819 - src.data.loaders.historical_loader - INFO - Loading injury data for 20250203
-2025-10-18 14:22:39,820 - src.data.loaders.historical_loader - INFO - Loaded 6 injury records for 20250203
-2025-10-18 14:22:39,820 - src.walk_forward_backtest - WARNING - No salary data for 20250203, skipping
-2025-10-18 14:22:39,820 - src.walk_forward_backtest - INFO - 
-2025-10-18 14:22:39,820 - src.walk_forward_backtest - INFO - Processing slate 4/80: 20250204
-2025-10-18 14:22:39,820 - src.data.loaders.historical_loader - INFO - Loading slate data for 20250204
-
-Loading slate data:   0%|          | 0/4 [00:00<?, ?it/s][A
-                                                         [A2025-10-18 14:22:39,828 - src.data.loaders.historical_loader - INFO - Loaded slate data: 0 salaries, 7 games
-2025-10-18 14:22:39,828 - src.data.loaders.historical_loader - INFO - Loading injury data for 20250204
-2025-10-18 14:22:39,830 - src.data.loaders.historical_loader - INFO - Loaded 7 injury records for 20250204
-2025-10-18 14:22:39,830 - src.walk_forward_backtest - WARNING - No salary data for 20250204, skipping
-2025-10-18 14:22:39,830 - src.walk_forward_backtest - INFO - 
-2025-10-18 14:22:39,830 - src.walk_forward_backtest - INFO - Processing slate 5/80: 20250205
-2025-10-18 14:22:39,830 - src.data.loaders.historical_loader - INFO - Loading slate data for 20250205
-
-Loading slate data:   0%|          | 0/4 [00:00<?, ?it/s][A
-                                                         [A2025-10-18 14:22:39,845 - src.data.loaders.historical_loader - INFO - Loaded slate data: 1139 salaries, 11 games
-2025-10-18 14:22:39,845 - src.data.loaders.historical_loader - INFO - Loading injury data for 20250205
-2025-10-18 14:22:39,846 - src.data.loaders.historical_loader - INFO - Loaded 5 injury records for 20250205
-2025-10-18 14:22:39,846 - src.data.loaders.historical_loader - INFO - Loading historical player logs (from 20241001 to 20250429)
-2025-10-18 14:22:39,993 - src.data.loaders.historical_loader - INFO - Loaded 27183 player logs from 2024-10-22 00:00:00 to 2025-04-28 00:00:00
-2025-10-18 14:22:39,993 - src.walk_forward_backtest - INFO - Generating per-player model projections
-2025-10-18 14:22:39,999 - src.walk_forward_backtest - INFO - Added injury features to 1139 players for filtering
-2025-10-18 14:22:39,999 - src.walk_forward_backtest - INFO - Applying 1 player filters...
-2025-10-18 14:22:40,000 - src.walk_forward_backtest - INFO -   Applied ColumnFilter(column='salary', operator='>=', value=9000): 31 players remaining
-2025-10-18 14:22:40,000 - src.walk_forward_backtest - INFO - Filter results: 31/1139 players passed all filters
-2025-10-18 14:22:40,000 - src.walk_forward_backtest - INFO - Recalibrating player models, saving to: C:\Users\antho\OneDrive\Documents\Repositories\delapan-fantasy\data\models\per_player
-2025-10-18 14:22:40,000 - src.walk_forward_backtest - INFO - Training models in parallel with 32 workers
-[Parallel(n_jobs=32)]: Using backend ThreadingBackend with 32 concurrent workers.
-
-Fitting transformers:   0%|          | 0/4 [00:00<?, ?it/s][A
-                                                           [A
-Fitting transformers:   0%|          | 0/4 [00:00<?, ?it/s][A
-
-Fitting transformers:   0%|          | 0/4 [00:00<?, ?it/s][A[A
-
-
-Fitting transformers:   0%|          | 0/4 [00:00<?, ?it/s][A[A[A
-
-
-
-Fitting transformers:   0%|          | 0/4 [00:00<?, ?it/s][A[A[A[A
-
-
-
-
-Fitting transformers:   0%|          | 0/4 [00:00<?, ?it/s][A[A[A[A[A
-
-
-
-
-
-Fitting transformers:   0%|          | 0/4 [00:00<?, ?it/s][A[A[A[A[A[A
-
-
-
-
-
-
-Fitting transformers:   0%|          | 0/4 [00:00<?, ?it/s][A[A[A[A[A[A[A
-
-
-
-
-
-
-
-Fitting transformers:   0%|          | 0/4 [00:00<?, ?it/s][A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-Fitting transformers:   0%|          | 0/4 [00:00<?, ?it/s][A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-Fitting transformers:   0%|          | 0/4 [00:00<?, ?it/s][A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-Fitting transformers:   0%|          | 0/4 [00:00<?, ?it/s][A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-Fitting transformers:   0%|          | 0/4 [00:00<?, ?it/s][A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-Fitting transformers:   0%|          | 0/4 [00:00<?, ?it/s][A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-Fitting transformers:   0%|          | 0/4 [00:00<?, ?it/s][A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-Fitting transformers:   0%|          | 0/4 [00:00<?, ?it/s][A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-Fitting transformers:   0%|          | 0/4 [00:00<?, ?it/s][A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-Fitting transformers:   0%|          | 0/4 [00:00<?, ?it/s][A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-Fitting transformers:   0%|          | 0/4 [00:00<?, ?it/s][A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-Fitting transformers:   0%|          | 0/4 [00:00<?, ?it/s][A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-                                                           [A
-
-                                                           [A[A
-
-
-                                                           [A[A[A
-
-
-
-                                                           [A[A[A[A
-
-
-
-
-                                                           [A[A[A[A[A
-
-
-
-
-
-                                                           [A[A[A[A[A[A
-
-
-
-
-
-
-                                                           [A[A[A[A[A[A[A
-
-
-
-
-
-
-
-                                                           [A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-                                                           [A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-Applying transformers:   0%|          | 0/4 [00:00<?, ?it/s][A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-                                                           [A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-                                                           [A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-                                                           [A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-                                                           [A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-                                                           [A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-                                                           [A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-                                                           [A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-                                                           [A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-                                                           [A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-                                                           [A
-Applying transformers:   0%|          | 0/4 [00:00<?, ?it/s][A
-
-Applying transformers:   0%|          | 0/4 [00:00<?, ?it/s][A[A
-
-
-Applying transformers:   0%|          | 0/4 [00:00<?, ?it/s][A[A[A
-
-
-
-Applying transformers:   0%|          | 0/4 [00:00<?, ?it/s][A[A[A[A
-
-
-
-
-Applying transformers:   0%|          | 0/4 [00:00<?, ?it/s][A[A[A[A[A
-
-
-
-
-
-Applying transformers:   0%|          | 0/4 [00:00<?, ?it/s][A[A[A[A[A[A
-
-
-
-
-
-
-Applying transformers:   0%|          | 0/4 [00:00<?, ?it/s][A[A[A[A[A[A[A
-
-
-
-
-
-
-
-Applying transformers:   0%|          | 0/4 [00:00<?, ?it/s][A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-Applying transformers:   0%|          | 0/4 [00:00<?, ?it/s][A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-Applying transformers:   0%|          | 0/4 [00:00<?, ?it/s][A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-Applying transformers:   0%|          | 0/4 [00:00<?, ?it/s][A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-Applying transformers:   0%|          | 0/4 [00:00<?, ?it/s][A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-Applying transformers:   0%|          | 0/4 [00:00<?, ?it/s][A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-Applying transformers:   0%|          | 0/4 [00:00<?, ?it/s][A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-Applying transformers:   0%|          | 0/4 [00:00<?, ?it/s][A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-Applying transformers:   0%|          | 0/4 [00:00<?, ?it/s][A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-Applying transformers:   0%|          | 0/4 [00:00<?, ?it/s][A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
- ... (more hidden) ...[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-Applying transformers:  25%|##5       | 1/4 [00:01<00:04,  1.39s/it][A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-Applying transformers:  50%|#####     | 2/4 [00:01<00:01,  1.35it/s][A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-Applying transformers: 100%|##########| 4/4 [00:01<00:00,  3.04it/s][A[A[A[A[A[A[A[A[A[A
-
-Applying transformers:  25%|##5       | 1/4 [00:01<00:05,  1.84s/it][A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-                      [A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-                                                                    [A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-Applying transformers:  25%|##5       | 1/4 [00:01<00:05,  1.91s/it][A[A[A[A[A[A
-
-Applying transformers:  50%|#####     | 2/4 [00:02<00:01,  1.07it/s][A[A
-
-
-
-
-
-Applying transformers:  50%|#####     | 2/4 [00:02<00:01,  1.05it/s][A[A[A[A[A[A
-
-                                                                    [A[A
-
-
-Applying transformers:  25%|##5       | 1/4 [00:02<00:06,  2.25s/it][A[A[A
-
-Applying transformers:  25%|##5       | 1/4 [00:02<00:06,  2.17s/it][A[A
-
-
-
-
-
-
-
-
-
-
-
-
-Applying transformers:  25%|##5       | 1/4 [00:02<00:06,  2.23s/it][A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-Applying transformers:  25%|##5       | 1/4 [00:02<00:06,  2.25s/it][A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-                                                                    [A[A[A[A[A[A
-
-
-
-Applying transformers:  25%|##5       | 1/4 [00:02<00:06,  2.33s/it][A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-Applying transformers:  25%|##5       | 1/4 [00:02<00:06,  2.26s/it][A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-Applying transformers:  25%|##5       | 1/4 [00:02<00:07,  2.34s/it][A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-Applying transformers:  25%|##5       | 1/4 [00:02<00:06,  2.31s/it][A[A[A[A[A[A[A[A[A[A[A[A[A[A
-Applying transformers:  25%|##5       | 1/4 [00:02<00:07,  2.41s/it][A
-
-
-
-
-
-
-
-
-
-
-
-Applying transformers:  25%|##5       | 1/4 [00:02<00:07,  2.39s/it][A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-Applying transformers:  25%|##5       | 1/4 [00:02<00:07,  2.42s/it][A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-Applying transformers:  25%|##5       | 1/4 [00:02<00:07,  2.40s/it][A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-Applying transformers:  25%|##5       | 1/4 [00:02<00:07,  2.48s/it][A[A[A[A[A[A[A
-
-
-Applying transformers:  50%|#####     | 2/4 [00:02<00:02,  1.08s/it][A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-Applying transformers:  50%|#####     | 2/4 [00:02<00:02,  1.06s/it][A[A[A[A[A[A[A[A[A[A[A[A[A
-
-Applying transformers:  50%|#####     | 2/4 [00:02<00:02,  1.05s/it][A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-Applying transformers:  25%|##5       | 1/4 [00:02<00:07,  2.47s/it][A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-Applying transformers:  25%|##5       | 1/4 [00:02<00:07,  2.55s/it][A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-Applying transformers:  50%|#####     | 2/4 [00:02<00:02,  1.10s/it][A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-Applying transformers:  25%|##5       | 1/4 [00:02<00:07,  2.50s/it][A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-Applying transformers:  25%|##5       | 1/4 [00:02<00:07,  2.53s/it][A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-Applying transformers:  50%|#####     | 2/4 [00:02<00:02,  1.10s/it][A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-Applying transformers:  75%|#######5  | 3/4 [00:02<00:00,  1.61it/s][A[A
-
-
-Applying transformers:  75%|#######5  | 3/4 [00:02<00:00,  1.54it/s][A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-Applying transformers:  75%|#######5  | 3/4 [00:02<00:00,  1.54it/s][A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-Applying transformers:  50%|#####     | 2/4 [00:02<00:02,  1.16s/it][A[A[A[A
-
-
-
-
-
-Applying transformers:  25%|##5       | 1/4 [00:02<00:07,  2.58s/it][A[A[A[A[A[A
-Applying transformers:  50%|#####     | 2/4 [00:02<00:02,  1.16s/it][A
-
-
-
-
-
-
-
-
-
-
-
-Applying transformers:  50%|#####     | 2/4 [00:02<00:02,  1.14s/it][A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-Applying transformers:  75%|#######5  | 3/4 [00:02<00:00,  1.53it/s][A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-Applying transformers:  50%|#####     | 2/4 [00:02<00:02,  1.15s/it][A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-Applying transformers:  50%|#####     | 2/4 [00:02<00:02,  1.16s/it][A[A[A[A[A[A[A[A[A
-
-
-
-
-Applying transformers:  50%|#####     | 2/4 [00:02<00:02,  1.18s/it][A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-Applying transformers:  75%|#######5  | 3/4 [00:02<00:00,  1.49it/s][A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-Applying transformers:  50%|#####     | 2/4 [00:02<00:02,  1.17s/it][A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-Applying transformers:  50%|#####     | 2/4 [00:02<00:02,  1.20s/it][A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-Applying transformers:  50%|#####     | 2/4 [00:02<00:02,  1.17s/it][A[A[A[A[A[A[A[A[A[A
-
-Applying transformers: 100%|##########| 4/4 [00:02<00:00,  2.27it/s][A[A
-
-
-
-
-
-
-
-Applying transformers:  50%|#####     | 2/4 [00:02<00:02,  1.19s/it][A[A[A[A[A[A[A[A
-
-
-Applying transformers: 100%|##########| 4/4 [00:02<00:00,  2.17it/s][A[A[A
-
-
-
-Applying transformers:  75%|#######5  | 3/4 [00:02<00:00,  1.42it/s][A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-Applying transformers: 100%|##########| 4/4 [00:02<00:00,  2.19it/s][A[A[A[A[A[A[A[A[A[A[A[A[A
-Applying transformers:  75%|#######5  | 3/4 [00:02<00:00,  1.41it/s][A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-Applying transformers:  50%|#####     | 2/4 [00:02<00:02,  1.18s/it][A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-Applying transformers:  75%|#######5  | 3/4 [00:02<00:00,  1.44it/s][A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-Applying transformers: 100%|##########| 4/4 [00:02<00:00,  2.15it/s][A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-Applying transformers:  50%|#####     | 2/4 [00:02<00:02,  1.20s/it][A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-Applying transformers:  75%|#######5  | 3/4 [00:02<00:00,  1.42it/s][A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-Applying transformers:  75%|#######5  | 3/4 [00:02<00:00,  1.42it/s][A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-Applying transformers:  75%|#######5  | 3/4 [00:02<00:00,  1.39it/s][A[A[A[A[A
-
-
-
-
-
-Applying transformers:  50%|#####     | 2/4 [00:02<00:02,  1.18s/it][A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-Applying transformers:  75%|#######5  | 3/4 [00:02<00:00,  1.46it/s][A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-Applying transformers: 100%|##########| 4/4 [00:02<00:00,  2.20it/s][A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-Applying transformers:  75%|#######5  | 3/4 [00:02<00:00,  1.42it/s][A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-Applying transformers:  75%|#######5  | 3/4 [00:02<00:00,  1.45it/s][A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-Applying transformers:  75%|#######5  | 3/4 [00:02<00:00,  1.43it/s][A[A[A[A[A[A[A[A
-
-
-
-Applying transformers: 100%|##########| 4/4 [00:03<00:00,  2.14it/s][A[A[A[A
-Applying transformers:  50%|#####     | 2/4 [00:02<00:02,  1.18s/it][A
-
-
-
-
-
-
-
-
-
-
-
-Applying transformers: 100%|##########| 4/4 [00:02<00:00,  2.17it/s][A[A[A[A[A[A[A[A[A[A[A[A
-
-                                                                    [A[A
-
-
-                                                                    [A[A[A
-
-
-
-
-
-
-
-
-Applying transformers:  50%|#####     | 2/4 [00:02<00:02,  1.18s/it][A[A[A[A[A[A[A[A[A
-
-
-
-
-
-Applying transformers: 100%|##########| 4/4 [00:02<00:00,  2.10it/s][A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-                                                                    [A[A[A[A[A[A[A[A[A[A[A[A[A
-                                                                    [A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-                                                                    [A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-                                                                    [A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-                                                                    [A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-                                                                    [A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-                                                                    [A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-                                                                    [A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-                                                                    [A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-                                                                    [A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-[A[A
-
-
-
-
-
-
-
-
-
-                                                                    [A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-
-                                                                    [A[A[A[A[A[A[A
-
-
-
-                                                                    [A[A[A[A
-
-
-
-
-
-
-
-                                                                    [A[A[A[A[A[A[A[A
-
-
-[A[A[A
-
-
-
-
-
-
-
-
-
-
-
-                                                                    [A[A[A[A[A[A[A[A[A[A[A[A
-                                                                    [A
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A[A
-
-
-
-
-
-                                                                    [A[A[A[A[A[A
-
-
-
-
-
-
-
-
-                                                                    [A[A[A[A[A[A[A[A[A[14:23:30] WARNING: C:\actions-runner\_work\xgboost\xgboost\src\common\error_msg.cc:58: Falling back to prediction using DMatrix due to mismatched devices. This might lead to higher memory usage and slower performance. XGBoost is running on: cuda:0, while the input data is on: cpu.
-Potential solutions:
-- Use a data structure that matches the device ordinal in the booster.
-- Set the device for booster before call to inplace_predict.
-
-This warning will only be shown once.
-
-[Parallel(n_jobs=32)]: Done   1 tasks      | elapsed:   50.8s
-[Parallel(n_jobs=32)]: Done   4 out of  31 | elapsed:  1.5min remaining:  9.9min
-[Parallel(n_jobs=32)]: Done   8 out of  31 | elapsed:  1.5min remaining:  4.4min
-[Parallel(n_jobs=32)]: Done  12 out of  31 | elapsed:  1.7min remaining:  2.7min
-[Parallel(n_jobs=32)]: Done  16 out of  31 | elapsed:  1.7min remaining:  1.6min
-[Parallel(n_jobs=32)]: Done  20 out of  31 | elapsed:  1.8min remaining:   57.8s
-[Parallel(n_jobs=32)]: Done  24 out of  31 | elapsed:  1.8min remaining:   30.7s
-[Parallel(n_jobs=32)]: Done  28 out of  31 | elapsed:  1.8min remaining:   11.2s
-[Parallel(n_jobs=32)]: Done  31 out of  31 | elapsed:  1.8min finished

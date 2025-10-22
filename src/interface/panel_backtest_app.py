@@ -34,7 +34,7 @@ import queue
 from datetime import datetime
 from typing import Dict, List, Any, Optional
 
-from src.walk_forward_backtest import WalkForwardBacktest
+from src.evaluation.backtest import WalkForwardBacktest
 from src.filters import InjuryFilter, ColumnFilter
 # Configure logging
 logging.basicConfig(
@@ -212,7 +212,7 @@ pn.extension(
 
 # Constants
 EXPERIMENT_DIR = Path("config/experiments")
-DEFAULT_DB_PATH = "nba_dfs.db"
+DEFAULT_DATA_DIR = "data"
 DEFAULT_OUTPUT_DIR = "data/backtest_results"
 
 
@@ -342,7 +342,7 @@ final_summary = None
 
 # Configuration state
 config = {
-    'db_path': DEFAULT_DB_PATH,
+    'data_dir': DEFAULT_DATA_DIR,
     'train_start': '20241001',
     'train_end': '20241130',
     'test_start': '20241201',
@@ -368,7 +368,7 @@ model_params = {
 }
 
 # Create widgets
-db_path_input = pn.widgets.TextInput(name='Database Path', value=config['db_path'], width=300)
+data_dir_input = pn.widgets.TextInput(name='Data Directory', value=config['data_dir'], width=300)
 train_start_input = pn.widgets.TextInput(name='Train Start (YYYYMMDD)', value=config['train_start'], width=300)
 train_end_input = pn.widgets.TextInput(name='Train End (YYYYMMDD)', value=config['train_end'], width=300)
 test_start_input = pn.widgets.TextInput(name='Test Start (YYYYMMDD)', value=config['test_start'], width=300)
@@ -458,7 +458,6 @@ def on_run_backtest(event):
         filters.append(ColumnFilter('salary', '>=', salary_min.value))
 
     run_config = {
-        'db_path': db_path_input.value,
         'train_start': train_start_input.value,
         'train_end': train_end_input.value,
         'test_start': test_start_input.value,
@@ -467,6 +466,7 @@ def on_run_backtest(event):
         'model_params': params,
         'feature_config': feature_config_select.value,
         'output_dir': output_dir_input.value,
+        'data_dir': data_dir_input.value,
         'per_player_models': per_player_checkbox.value,
         'recalibrate_days': recalibrate_input.value,
         'minutes_threshold': minutes_input.value,
@@ -716,7 +716,7 @@ sidebar = pn.Column(
     '## Configuration',
     '---',
     '### Data',
-    db_path_input,
+    data_dir_input,
     train_start_input,
     train_end_input,
     test_start_input,

@@ -1,3 +1,4 @@
+
 # NBA DFS ML Pipeline
 
 Modular machine learning system for NBA DFS optimization on DraftKings with per-player XGBoost models.
@@ -114,8 +115,8 @@ delapan-fantasy/
 ├── scripts/                  # Data collection & processing scripts
 │   ├── collect_games.py              # Collect schedules and box scores
 │   ├── collect_dfs_salaries.py       # Collect DFS salaries
-│   ├── load_games_to_db.py           # Load Parquet to SQLite
-│   └── optimize_xgboost_hyperparameters.py  # Bayesian hyperparameter tuning
+│   ├── run_backtest.py               # Run walk-forward backtest
+│   └── optimize_hyperparameters.py   # Bayesian hyperparameter tuning
 ├── notebooks/                # Jupyter notebooks
 │   ├── backtest_1d_by_player.ipynb   # Single-day per-player backtest
 │   ├── backtest_1d_by_slate.ipynb    # Single-day slate-level backtest
@@ -344,6 +345,46 @@ Opens dashboard at http://localhost:8501 with interactive controls.
 
 See [docs/PANEL_INTERFACE.md](docs/PANEL_INTERFACE.md) for Panel UI detailed guide.
 
+### Running Backtests with Lineup Generation
+
+Generate optimal DraftKings lineups using pydfs-lineup-optimizer integrated with backtesting:
+
+**Command-line with lineup generation:**
+```bash
+# Cash game strategy (conservative, single lineup)
+python scripts/run_backtest_with_lineups.py \
+    --test-start 20250205 --test-end 20250206 \
+    --contest-config cash_game.json --num-lineups 1
+
+# GPP tournament strategy (aggressive, multiple lineups)
+python scripts/run_backtest_with_lineups.py \
+    --test-start 20250201 --test-end 20250210 --per-player \
+    --contest-config gpp_tournament.json --num-lineups 20
+```
+
+**Interactive Jupyter notebook:**
+```bash
+jupyter notebook notebooks/run_backtest_with_lineups.ipynb
+```
+
+**Lineup generation features:**
+- Contest-specific optimization (cash games, GPPs, single-entry, multi-entry)
+- DraftKings constraints (8 players, $50K cap, position requirements)
+- Risk management (ceiling/floor projections, variance weighting)
+- Performance tracking (projected vs actual lineup scores)
+- Export formats (CSV for upload, JSON for analysis)
+
+**Contest configurations** in `config/contests/`:
+- `cash_game.json` - 50/50s and Double-ups (conservative, floor-focused)
+- `gpp_tournament.json` - Large-field GPPs (aggressive, ceiling-focused, stacking rules)
+- `single_entry.json` - Single-entry tournaments (balanced strategy)
+- `multi_entry.json` - Multi-entry tournaments (diversity-focused, exposure management)
+
+**Output files:**
+- CSV lineups for DraftKings upload: `{output_dir}/lineups/*_lineups.csv`
+- JSON lineup details: `{output_dir}/lineups/*_lineups.json`
+- Performance report: `{output_dir}/lineup_performance_report.csv`
+
 ## API Rate Limits
 
 Tank01 RapidAPI limits:
@@ -508,15 +549,15 @@ Rebuilds feature matrix using same pipeline as backtest training phase.
 
 ### Requirements
 
-- Streamlit >= 1.28.0
-- SQLite database with collected game/salary data (scripts/collect_games.py, scripts/collect_dfs_salaries.py)
+- Panel >= 1.3.0 (for UI)
+- Parquet data files with collected game/salary data (scripts/collect_games.py, scripts/collect_dfs_salaries.py)
 - YAML configuration files in config/experiments/ (optional but recommended)
 
 ### Troubleshooting
 
 **Backtest never starts:**
-- Verify SQLite database exists at specified path
-- Check database contains data for training date range
+- Verify parquet data files exist in data directory
+- Check data directory contains files for training date range
 - Ensure feature config file exists (config/features/default_features.yaml)
 
 **Empty training sample:**

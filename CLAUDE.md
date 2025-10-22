@@ -123,6 +123,8 @@ data/
 ### Data Loaders: src/data/loaders/
 
 HistoricalDataLoader (src/data/loaders/historical_loader.py):
+- Uses DuckDB for efficient in-memory querying of parquet files
+- Reads directly from date-partitioned parquet storage with hive partitioning
 - load_slate_data(date): Load all data for a specific slate
 - load_historical_data(start_date, end_date): Load data across date range
 - load_historical_player_logs(start_date, end_date, num_seasons, player_ids): Load player logs with temporal validation
@@ -443,8 +445,7 @@ Storage flattens body to DataFrame for analysis.
 2. Collect DFS salaries:
    python scripts/collect_dfs_salaries.py --start-date YYYYMMDD --end-date YYYYMMDD
 3. Monitor API usage via client.get_remaining_requests()
-4. Verify data in ./data/inputs/ subdirectories
-5. Optional: Load to SQLite: python scripts/load_games_to_db.py
+4. Verify data in ./data/inputs/ subdirectories (stored as parquet files)
 
 ### Adding New Features
 
@@ -550,11 +551,11 @@ lineups = optimizer.optimize(projections_df, num_lineups=1)
 from src.walk_forward_backtest import WalkForwardBacktest
 
 backtest = WalkForwardBacktest(
-    db_path='nba_dfs.db',
     train_start='20241001',
     train_end='20241130',
     test_start='20241201',
     test_end='20241215',
+    data_dir='data',
     per_player_models=True,
     model_type='xgboost',
     feature_config='default_features',
@@ -570,10 +571,9 @@ results = backtest.run()
 
 ```python
 from src.data.loaders.historical_loader import HistoricalDataLoader
-from src.data.storage.parquet_storage import ParquetStorage
 
-storage = ParquetStorage()
-loader = HistoricalDataLoader(storage)
+# Initialize loader with data directory containing parquet files
+loader = HistoricalDataLoader(data_dir='data')
 
 slate_data = loader.load_slate_data('20241215')
 historical_data = loader.load_historical_data('20241201', '20241231')

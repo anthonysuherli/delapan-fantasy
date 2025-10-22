@@ -1,25 +1,27 @@
 import pandas as pd
+import duckdb
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
+from pathlib import Path
 import logging
 from tqdm import tqdm
 from .base import DataLoader
-from ..storage.base import BaseStorage
 
 logger = logging.getLogger(__name__)
 
 
 class HistoricalDataLoader(DataLoader):
-    """Load historical DFS data using BaseStorage interface"""
+    """Load historical DFS data using DuckDB from parquet files"""
 
-    def __init__(self, storage: BaseStorage):
+    def __init__(self, data_dir: str = 'data'):
         """
-        Initialize historical data loader.
+        Initialize historical data loader with DuckDB.
 
         Args:
-            storage: Storage implementation to use for data access
+            data_dir: Base directory containing parquet files
         """
-        self.storage = storage
+        self.data_dir = Path(data_dir)
+        self.conn = duckdb.connect(':memory:')
 
     @staticmethod
     def get_season_start_date(target_date: str) -> str:
@@ -61,6 +63,29 @@ class HistoricalDataLoader(DataLoader):
         previous_season_dt = datetime(current_season_dt.year - 1, 10, 1)
         return previous_season_dt.strftime('%Y%m%d')
 
+    def _get_parquet_path(self, data_type: str, date: str = None) -> str:
+        """
+        Get parquet file path pattern for data type.
+
+        Args:
+            data_type: Type of data (e.g., 'dfs_salaries', 'betting_odds')
+            date: Optional date in YYYYMMDD format for specific file
+
+        Returns:
+            File path pattern for DuckDB to read
+        """
+        base_path = self.data_dir / data_type
+        
+        if date:
+            # Convert date YYYYMMDD to path structure YYYY/MM/DD.parquet
+            year = date[:4]
+            month = date[4:6]
+            day = date[6:8]
+            return str(base_path / year / month / f"{day}.parquet")
+        else:
+            # Use wildcard pattern for all files
+            return str(base_path / "**" / "*.parquet")
+
     def load_slate_data(
         self,
         date: str,
@@ -78,7 +103,7 @@ class HistoricalDataLoader(DataLoader):
         """
         logger.info(f"Loading slate data for {date}")
 
-        available_types = ['dfs_salaries', 'schedule', 'betting_odds', 'injuries']
+        available_types = ['dfs_salaries', 'games', 'betting_odds', 'injuries']
         types_to_load = data_types or available_types
 
         slate_data = {
@@ -87,10 +112,36 @@ class HistoricalDataLoader(DataLoader):
 
         for data_type in tqdm(types_to_load, desc="Loading slate data", leave=False):
             try:
-                filters = {'start_date': date, 'end_date': date}
-                data = self.storage.load(data_type, filters)
-                slate_data[data_type] = data
+                path = self._get_parquet_path(data_type, date)
+                
+                if Path(path).exists():
+                    query = f"""
+                        SELECT * FROM read_parquet('{path}')
+                    """
+                    data = self.conn.execute(query).df()
 
+                    # Expand DFS salaries from nested structure
+                    if data_type == 'dfs_salaries' and not data.empty and 'draftkings' in data.columns:
+                        dk_data = data['draftkings'].iloc[0]
+                        if isinstance(dk_data, (list, tuple)) or hasattr(dk_data, '__iter__'):
+                            # Convert array of dicts to DataFrame
+                            expanded_data = []
+                            for player in dk_data:
+                                if isinstance(player, dict):
+                                    player_data = player.copy()
+                                    player_data['gameDate'] = date
+                                    # Convert salary to int
+                                    if 'salary' in player_data:
+                                        player_data['salary'] = int(player_data['salary'])
+                                    expanded_data.append(player_data)
+
+                            if expanded_data:
+                                data = pd.DataFrame(expanded_data)
+                                logger.debug(f"Expanded {len(data)} DraftKings players from nested structure")
+                else:
+                    data = pd.DataFrame()
+
+                slate_data[data_type] = data
                 logger.debug(f"Loaded {len(data)} rows for {data_type}")
 
             except Exception as e:
@@ -100,7 +151,7 @@ class HistoricalDataLoader(DataLoader):
         logger.info(
             f"Loaded slate data: "
             f"{len(slate_data.get('dfs_salaries', []))} salaries, "
-            f"{len(slate_data.get('schedule', []))} games"
+            f"{len(slate_data.get('games', []))} games"
         )
 
         return slate_data
@@ -124,15 +175,24 @@ class HistoricalDataLoader(DataLoader):
         """
         logger.info(f"Loading historical data from {start_date} to {end_date}")
 
-        available_types = ['dfs_salaries', 'schedule', 'betting_odds', 'injuries', 'box_scores']
+        available_types = ['dfs_salaries', 'games', 'betting_odds', 'injuries', 'player_logs_extracted']
         types_to_load = data_types or available_types
 
         historical_data = {}
 
         for data_type in tqdm(types_to_load, desc="Loading historical data", leave=False):
             try:
-                filters = {'start_date': start_date, 'end_date': end_date}
-                data = self.storage.load(data_type, filters)
+                path_pattern = self._get_parquet_path(data_type)
+                
+                # Build date filter based on common date column names
+                date_col = self._get_date_column(data_type)
+                
+                query = f"""
+                    SELECT * FROM read_parquet('{path_pattern}', hive_partitioning=1)
+                    WHERE {date_col} >= '{start_date}' AND {date_col} <= '{end_date}'
+                """
+                
+                data = self.conn.execute(query).df()
                 historical_data[data_type] = data
 
                 if not data.empty:
@@ -148,6 +208,26 @@ class HistoricalDataLoader(DataLoader):
                 historical_data[data_type] = pd.DataFrame()
 
         return historical_data
+
+    def _get_date_column(self, data_type: str) -> str:
+        """
+        Get the appropriate date column name for a data type.
+
+        Args:
+            data_type: Type of data
+
+        Returns:
+            Name of the date column
+        """
+        date_columns = {
+            'dfs_salaries': 'gameDate',
+            'games': 'gameDate',
+            'betting_odds': 'gameDate',
+            'injuries': 'injDate',
+            'player_logs_extracted': 'gameDate',
+            'player_logs': 'gameDate'
+        }
+        return date_columns.get(data_type, 'gameDate')
 
     def load_historical_player_logs(
         self,
@@ -197,18 +277,27 @@ class HistoricalDataLoader(DataLoader):
             logger.info(f"Filtering for {len(player_ids)} specific players")
 
         try:
-            filters = {'start_date': start_date, 'end_date': end_date}
-            df = self.storage.load('box_scores', filters)
+            path_pattern = self._get_parquet_path('player_logs_extracted')
+            date_col = 'gameDate'
+            
+            # Build query with optional player filter
+            player_filter = ""
+            if player_ids:
+                # Create a comma-separated list of quoted player IDs
+                player_list = "', '".join(player_ids)
+                player_filter = f" AND playerID IN ('{player_list}')"
+            
+            query = f"""
+                SELECT * FROM read_parquet('{path_pattern}', hive_partitioning=1)
+                WHERE {date_col} >= '{start_date}' 
+                  AND {date_col} < '{end_date}'{player_filter}
+            """
+            
+            df = self.conn.execute(query).df()
 
             if df.empty:
                 logger.warning(f"No historical data found for date range {start_date} to {end_date}")
                 return pd.DataFrame()
-
-            # Filter by player IDs if provided
-            if player_ids and 'playerID' in df.columns:
-                initial_rows = len(df)
-                df = df[df['playerID'].isin(player_ids)]
-                logger.info(f"Filtered to {len(df)}/{initial_rows} rows for {len(player_ids)} players")
 
             if 'gameDate' in df.columns:
                 df['gameDate'] = pd.to_datetime(df['gameDate'], format='%Y%m%d', errors='coerce')
@@ -220,8 +309,6 @@ class HistoricalDataLoader(DataLoader):
                     raise ValueError(
                         f"Lookahead bias: max date in data ({max_date_in_data}) >= end_date ({end_date})"
                     )
-
-                df = df[df['gameDate'] < end_date_dt]
 
                 logger.info(
                     f"Loaded {len(df)} player logs from {df['gameDate'].min()} to {df['gameDate'].max()}"
@@ -250,8 +337,16 @@ class HistoricalDataLoader(DataLoader):
         logger.info(f"Loading injury data for {date}")
 
         try:
-            filters = {'start_date': date, 'end_date': date}
-            injuries = self.storage.load('injuries', filters)
+            path_pattern = self._get_parquet_path('injuries')
+            
+            # Injuries might span date ranges, so look for records where date falls within range
+            query = f"""
+                SELECT * FROM read_parquet('{path_pattern}', hive_partitioning=1)
+                WHERE injDate <= '{date}' 
+                  AND (injReturnDate IS NULL OR injReturnDate >= '{date}')
+            """
+            
+            injuries = self.conn.execute(query).df()
 
             if not injuries.empty:
                 logger.info(f"Loaded {len(injuries)} injury records for {date}")
@@ -276,11 +371,19 @@ class HistoricalDataLoader(DataLoader):
             List of dates in YYYYMMDD format
         """
         try:
-            filters = {'start_date': start_date, 'end_date': end_date}
-            schedule_data = self.storage.load('schedule', filters)
+            path_pattern = self._get_parquet_path('games')
+            
+            query = f"""
+                SELECT DISTINCT gameDate 
+                FROM read_parquet('{path_pattern}', hive_partitioning=1)
+                WHERE gameDate >= '{start_date}' AND gameDate <= '{end_date}'
+                ORDER BY gameDate
+            """
+            
+            schedule_data = self.conn.execute(query).df()
 
-            if 'gameDate' in schedule_data.columns:
-                slate_dates = sorted(schedule_data['gameDate'].unique().tolist())
+            if not schedule_data.empty and 'gameDate' in schedule_data.columns:
+                slate_dates = schedule_data['gameDate'].tolist()
                 logger.info(f"Found {len(slate_dates)} slate dates from {start_date} to {end_date}")
                 return slate_dates
             else:
@@ -290,3 +393,8 @@ class HistoricalDataLoader(DataLoader):
         except Exception as e:
             logger.error(f"Failed to load slate dates: {str(e)}")
             return []
+
+    def __del__(self):
+        """Close DuckDB connection on cleanup"""
+        if hasattr(self, 'conn'):
+            self.conn.close()

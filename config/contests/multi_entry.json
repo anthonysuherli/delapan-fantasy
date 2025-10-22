@@ -1,0 +1,65 @@
+{
+  "contest_type": "multi_entry",
+  "name": "Multi Entry",
+  "description": "Contests allowing multiple lineup entries",
+  "optimization_settings": {
+    "num_lineups": 20,
+    "max_exposure": 0.5,
+    "min_exposure": 0.05,
+    "randomness": true,
+    "min_salary_cap": 48000,
+    "max_repeating_players": 5,
+    "strategy": "mixed"
+  },
+  "lineup_rules": {
+    "unique_lineups": true,
+    "min_unique_players": 4,
+    "correlation_rules": {
+      "allow_opposing_defense": false,
+      "stack_rules": {
+        "team_stack": {
+          "enabled": true,
+          "min_players": 2,
+          "max_players": 4
+        },
+        "game_stack": {
+          "enabled": true,
+          "min_players_per_team": 1,
+          "max_players_per_team": 3
+        }
+      }
+    }
+  },
+  "player_settings": {
+    "ownership_settings": {
+      "use_projected_ownership": true,
+      "fade_threshold": 0.35,
+      "chalk_threshold": 0.25,
+      "leverage_plays": {
+        "enabled": true,
+        "min_projection_percentile": 65,
+        "max_ownership": 0.12
+      }
+    },
+    "min_projected_points": 15.0,
+    "exclude_injured": true,
+    "exclude_questionable": false
+  },
+  "risk_settings": {
+    "variance_weight": 0.25,
+    "ceiling_weight": 0.6,
+    "floor_weight": 0.15
+  },
+  "entry_settings": {
+    "max_entries": 150,
+    "entry_fee_range": {
+      "min": 1,
+      "max": 200
+    }
+  },
+  "lineup_diversity": {
+    "max_player_overlap": 6,
+    "min_lineup_difference": 2,
+    "ownership_correlation": -0.3
+  }
+}

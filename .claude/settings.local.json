@@ -7,7 +7,11 @@
       "Bash(for file in \"C:\\Users\\antho\\OneDrive\\Documents\\Repositories\\delapan-fantasy\\scripts\"/*.py)",
       "Bash(head -3 \"$file\")",
       "Bash(done)",
-      "Bash(python scripts/run_backtest_gpu.py --help)"
+      "Bash(python scripts/run_backtest_gpu.py --help)",
+      "WebFetch(domain:pydfs-lineup-optimizer.readthedocs.io)",
+      "Bash(grep -n '```' \"c:\\Users\\antho\\OneDrive\\Documents\\Repositories\\delapan-fantasy\\docs\\BACKTESTING_FLOWCHART.md\")",
+      "Bash(sed -n '100,120p' \"c:\\Users\\antho\\OneDrive\\Documents\\Repositories\\delapan-fantasy\\docs\\BACKTESTING_FLOWCHART.md\")",
+      "Bash(__NEW_LINE__ python -c \"\nimport pandas as pd\nimport numpy as np\nfrom sklearn.metrics import mean_absolute_percentage_error\n\n# Simulate the problematic data\nactuals = np.array([30.0, 25.0, 0.0, 20.0, 15.0])  # One zero value\npreds = np.array([28.0, 22.0, 36.0, 18.0, 14.0])\n\nprint(''Without filtering (includes zero):'')\ntry:\n    mape = mean_absolute_percentage_error(actuals, preds) * 100\n    print(f''MAPE: {mape}%'')\nexcept Exception as e:\n    print(f''Error: {e}'')\n\nprint(''\\nWith filtering (actual_fpts >= 5.0):'')\nmask = actuals >= 5.0\nfiltered_actuals = actuals[mask]\nfiltered_preds = preds[mask]\nmape_filtered = mean_absolute_percentage_error(filtered_actuals, filtered_preds) * 100\nprint(f''MAPE: {mape_filtered:.2f}%'')\nprint(f''Excluded {(~mask).sum()} players with low actuals'')\n\")"
     ],
     "deny": [],
     "ask": []

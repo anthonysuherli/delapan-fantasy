@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 from datetime import datetime
 import logging
+import base64
 
 from src.evaluation.visualizations import BacktestVisualizer
 from src.evaluation.plotly_visualizations import PlotlyBacktestVisualizer
@@ -51,18 +52,27 @@ class BacktestReportGenerator:
         if generate_charts:
             try:
                 logger.info("Generating visualization charts...")
-                if self.use_plotly:
-                    logger.info("Using Plotly for interactive visualizations...")
-                    visualizer = PlotlyBacktestVisualizer(self.output_dir)
+                # Ensure results is a dict with aggregated metrics
+                if not isinstance(results, dict):
+                    logger.warning(f"Results is not a dict, cannot generate charts. Type: {type(results)}")
+                    chart_paths = {}
+                elif 'model_mean_mape' not in results:
+                    logger.warning("Results missing 'model_mean_mape', skipping chart generation")
+                    chart_paths = {}
                 else:
-                    logger.info("Using matplotlib for static visualizations...")
-                    visualizer = BacktestVisualizer(self.output_dir)
-                chart_paths = visualizer.generate_all_charts(results)
-                logger.info(f"Generated {len(chart_paths)} charts")
+                    if self.use_plotly:
+                        logger.info("Using Plotly for interactive visualizations...")
+                        visualizer = PlotlyBacktestVisualizer(self.output_dir)
+                    else:
+                        logger.info("Using matplotlib for static visualizations...")
+                        visualizer = BacktestVisualizer(self.output_dir)
+                    chart_paths = visualizer.generate_all_charts(results)
+                    logger.info(f"Generated {len(chart_paths)} charts")
             except Exception as e:
                 logger.error(f"Failed to generate charts: {str(e)}")
                 import traceback
                 logger.error(traceback.format_exc())
+                chart_paths = {}
 
         report_path = self.output_dir / f"backtest_report_{run_timestamp}.html"
 
@@ -153,16 +163,17 @@ class BacktestReportGenerator:
     def _write_html_header(self, f):
         """Write HTML document header with CSS styling."""
         f.write("""<!DOCTYPE html>
-<html lang="en">
+<html lang=\"en\">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset=\"UTF-8\">
+    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">
     <title>NBA DFS Backtest Report</title>
+    <link rel=\"stylesheet\" href=\"https://cdn.jsdelivr.net/npm/hack-font@3/build/web/hack.css\">
     <style>
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            font-family: 'Hack', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
             line-height: 1.6;
-            max-width: 1200px;
+            max-width: 1600px;
             margin: 0 auto;
             padding: 20px;
             background-color: #0d1117;
@@ -302,7 +313,7 @@ class BacktestReportGenerator:
             background-color: #0d1117;
             padding: 2px 6px;
             border-radius: 3px;
-            font-family: 'Courier New', monospace;
+            font-family: 'Hack', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
             font-size: 0.9em;
             color: #79c0ff;
             border: 1px solid #30363d;
@@ -310,7 +321,7 @@ class BacktestReportGenerator:
     </style>
 </head>
 <body>
-<div class="container">
+<div class=\"container\">
 """)
 
     def _write_html_footer(self, f):
@@ -322,15 +333,36 @@ class BacktestReportGenerator:
 """)
 
     def _write_section_with_chart(self, f, title: str, chart_path: Path):
-        """Write a section with embedded chart image or interactive chart."""
+        """Write a section with embedded chart image or interactive chart.
+        To avoid broken relative paths (e.g., in OneDrive/SharePoint viewers),
+        we inline assets using data URIs when possible.
+        """
         f.write(f"<h2>{title}</h2>\n")
-        relative_path = Path('charts') / chart_path.name
 
         f.write('<div class="chart-container">\n')
-        if chart_path.suffix == '.html':
-            f.write(f'<iframe src="{relative_path}" width="100%" height="600px"></iframe>\n')
-        else:
-            f.write(f'<img src="{relative_path}" alt="{title}" style="max-width: 100%; height: auto;">\n')
+        ext = chart_path.suffix.lower()
+        try:
+            if ext == '.html':
+                # Inline HTML via base64 data URI to ensure portability
+                html_str = chart_path.read_text(encoding='utf-8')
+                b64 = base64.b64encode(html_str.encode('utf-8')).decode('ascii')
+                f.write(f'<iframe src="data:text/html;base64,{b64}" width="100%" height="900px"></iframe>\n')
+            else:
+                mime = 'image/png' if ext == '.png' else (
+                    'image/jpeg' if ext in {'.jpg', '.jpeg'} else (
+                    'image/svg+xml' if ext == '.svg' else (
+                    'image/gif' if ext == '.gif' else 'application/octet-stream')))
+                data = chart_path.read_bytes()
+                b64 = base64.b64encode(data).decode('ascii')
+                f.write(f'<img src="data:{mime};base64,{b64}" alt="{title}" style="max-width: 100%; height: auto;"/>\n')
+        except Exception:
+            # Fallback to relative path if inlining fails
+            relative_path = Path('charts') / chart_path.name
+            if ext == '.html':
+                f.write(f'<iframe src="{relative_path}" width="100%" height="900px"></iframe>\n')
+            else:
+                f.write(f'<img src="{relative_path}" alt="{title}" style="max-width: 100%; height: auto;"/>\n')
+
         f.write('</div>\n\n')
 
     def _write_header(self, f, run_timestamp: str):
@@ -347,8 +379,8 @@ class BacktestReportGenerator:
 
         # General Configuration
         f.write("<h3>General</h3>\n<ul>\n")
-        if config.get('db_path'):
-            f.write(f"<li><strong>Database:</strong> {config.get('db_path', 'N/A')}</li>\n")
+        if config.get('data_dir'):
+            f.write(f"<li><strong>Data Directory:</strong> {config.get('data_dir', 'N/A')}</li>\n")
         if config.get('output_dir'):
             f.write(f"<li><strong>Output Directory:</strong> {config.get('output_dir', 'N/A')}</li>\n")
         f.write("</ul>\n\n")

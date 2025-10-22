@@ -1,0 +1,60 @@
+{
+  "contest_type": "single_entry",
+  "name": "Single Entry",
+  "description": "Contests limited to one entry per user",
+  "optimization_settings": {
+    "num_lineups": 1,
+    "max_exposure": 1.0,
+    "min_exposure": 0.0,
+    "randomness": false,
+    "min_salary_cap": 49000,
+    "max_repeating_players": 8,
+    "strategy": "balanced"
+  },
+  "lineup_rules": {
+    "unique_lineups": false,
+    "min_unique_players": 0,
+    "correlation_rules": {
+      "allow_opposing_defense": true,
+      "stack_rules": {
+        "team_stack": {
+          "enabled": true,
+          "min_players": 2,
+          "max_players": 3
+        },
+        "game_stack": {
+          "enabled": false,
+          "min_players_per_team": 0,
+          "max_players_per_team": 8
+        }
+      }
+    }
+  },
+  "player_settings": {
+    "ownership_settings": {
+      "use_projected_ownership": true,
+      "fade_threshold": 0.4,
+      "chalk_threshold": 0.3,
+      "leverage_plays": {
+        "enabled": true,
+        "min_projection_percentile": 75,
+        "max_ownership": 0.2
+      }
+    },
+    "min_projected_points": 18.0,
+    "exclude_injured": true,
+    "exclude_questionable": false
+  },
+  "risk_settings": {
+    "variance_weight": 0.2,
+    "ceiling_weight": 0.5,
+    "floor_weight": 0.3
+  },
+  "entry_settings": {
+    "max_entries": 1,
+    "entry_fee_range": {
+      "min": 1,
+      "max": 1000
+    }
+  }
+}

@@ -28,6 +28,7 @@ class RandomForestModel(BaseModel):
         config = {**default_config, **(config or {})}
         super().__init__(config)
         self.model = None
+        self.feature_names = None  # Store feature column names from training
 
     def train(
         self,
@@ -58,6 +59,10 @@ class RandomForestModel(BaseModel):
 
         if save_inputs and input_save_path:
             self._save_training_inputs(X, y, input_save_path)
+
+        # Store feature names for use during prediction
+        if isinstance(X, pd.DataFrame):
+            self.feature_names = X.columns.tolist()
 
         self.model = RandomForestRegressor(**self.config)
         self.model.fit(X, y)
@@ -95,6 +100,17 @@ class RandomForestModel(BaseModel):
         """
         if not self._is_trained:
             raise ValueError("Model must be trained before prediction")
+
+        # Reindex X to match training features exactly
+        # Ensures feature consistency across predict calls
+        if self.feature_names and isinstance(X, pd.DataFrame):
+            # Ensure X has all training features (fill missing with 0)
+            for col in self.feature_names:
+                if col not in X.columns:
+                    X[col] = 0.0
+            # Select only training features in training order
+            X = X[self.feature_names]
+
         return self.model.predict(X)
 
     def save(self, path: str) -> None:

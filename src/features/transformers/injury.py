@@ -78,6 +78,8 @@ class InjuryTransformer(FeatureTransformer):
             'injury_return_date',
             'injury_description'
         ]
+        df.playerID = df.playerID.astype(str)
+        injuries_processed.playerID = injuries_processed.playerID.astype(str)
 
         df = df.merge(
             injuries_processed,

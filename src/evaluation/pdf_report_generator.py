@@ -585,7 +585,7 @@ class PDFStyleBacktestReportGenerator:
     <h3>General</h3>
     <table>
         <tr><th>Parameter</th><th>Value</th></tr>
-        {f"<tr><td>Database</td><td>{config.get('db_path', 'N/A')}</td></tr>" if config.get('db_path') else ''}
+        {f"<tr><td>Data Directory</td><td>{config.get('data_dir', 'N/A')}</td></tr>" if config.get('data_dir') else ''}
         {f"<tr><td>Output Directory</td><td>{config.get('output_dir', 'N/A')}</td></tr>" if config.get('output_dir') else ''}
     </table>
 
