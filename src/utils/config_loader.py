@@ -3,6 +3,24 @@ from pathlib import Path
 from typing import Dict, Any
 
 
+def load_yaml(file_path: str) -> Dict[str, Any]:
+    """
+    Load YAML configuration file.
+
+    Args:
+        file_path: Path to YAML file
+
+    Returns:
+        Dictionary containing YAML configuration
+
+    Raises:
+        FileNotFoundError: If file does not exist
+        yaml.YAMLError: If YAML parsing fails
+    """
+    with open(file_path, 'r') as f:
+        return yaml.safe_load(f)
+
+
 class ConfigLoader:
     """Load and validate experiment configurations"""
 
