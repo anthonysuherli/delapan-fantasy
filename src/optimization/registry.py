@@ -61,5 +61,7 @@ class OptimizerRegistry:
 registry = OptimizerRegistry()
 
 from .optimizers.linear_program import LinearProgramOptimizer
+from .optimizers.gpp_genetic import GPPGeneticOptimizer
 
 registry.register('linear_program', LinearProgramOptimizer)
+registry.register('gpp_genetic', GPPGeneticOptimizer)

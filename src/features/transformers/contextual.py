@@ -23,7 +23,7 @@ class ContextualFeaturesTransformer(FeatureTransformer):
     - days_off_3plus: 1 if 3+ days rest, 0 otherwise
     """
 
-    def __init__(self, max_rest_days: int = 7):
+    def __init__(self, max_rest_days: int = 7, name: str = "contextual"):
         """
         Initialize contextual features transformer.
 
@@ -31,8 +31,10 @@ class ContextualFeaturesTransformer(FeatureTransformer):
         ----------
         max_rest_days : int
             Cap rest days at this value (default 7)
+        name : str
+            Transformer name (default 'contextual')
         """
-        super().__init__()
+        super().__init__(name=name)
         self.max_rest_days = max_rest_days
 
     def fit(self, data: pd.DataFrame) -> 'ContextualFeaturesTransformer':
@@ -48,7 +50,7 @@ class ContextualFeaturesTransformer(FeatureTransformer):
         -------
         self
         """
-        self._is_fitted = True
+        self._fitted = True
         return self
 
     def transform(self, data: pd.DataFrame) -> pd.DataFrame:

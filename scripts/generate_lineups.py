@@ -25,6 +25,7 @@ import pandas as pd
 from datetime import datetime
 
 from src.optimization.lineup_generator import LineupGenerator
+from src.optimization.registry import registry as optimizer_registry
 
 
 def parse_args():
@@ -91,6 +92,39 @@ def parse_args():
         help="Print detailed information"
     )
 
+    parser.add_argument(
+        "--use-gpp-genetic",
+        action="store_true",
+        help="Use GPP genetic algorithm optimizer for tournaments"
+    )
+
+    parser.add_argument(
+        "--ownership-file",
+        default=None,
+        help="Path to ownership projections CSV (optional)"
+    )
+
+    parser.add_argument(
+        "--ownership-weight",
+        type=float,
+        default=0.3,
+        help="Weight for ownership penalty in GPP optimizer (default: 0.3)"
+    )
+
+    parser.add_argument(
+        "--population-size",
+        type=int,
+        default=100,
+        help="Population size for genetic algorithm (default: 100)"
+    )
+
+    parser.add_argument(
+        "--generations",
+        type=int,
+        default=50,
+        help="Number of generations for genetic algorithm (default: 50)"
+    )
+
     return parser.parse_args()
 
 
@@ -135,6 +169,137 @@ def load_predictions(predictions_path, verbose=False):
         print(f"  Avg salary: ${predictions_df['salary'].mean():.0f}")
 
     return predictions_df
+
+
+def load_ownership(ownership_path, predictions_df, verbose=False):
+    """
+    Load ownership projections and merge with predictions.
+
+    Parameters
+    ----------
+    ownership_path : str or None
+        Path to ownership CSV (playerID, ownership columns)
+    predictions_df : pd.DataFrame
+        Predictions DataFrame
+    verbose : bool
+        Print debug information
+
+    Returns
+    -------
+    pd.DataFrame
+        Predictions with ownership column added
+    """
+    if ownership_path is None:
+        # Estimate ownership based on salary (higher salary = higher ownership)
+        # Simple heuristic: normalize salary to 0-20% range
+        min_salary = predictions_df['salary'].min()
+        max_salary = predictions_df['salary'].max()
+
+        predictions_df['ownership'] = (
+            5.0 + (predictions_df['salary'] - min_salary) /
+            (max_salary - min_salary) * 15.0
+        )
+
+        if verbose:
+            print("\nUsing estimated ownership (salary-based):")
+            print(f"  Ownership range: {predictions_df['ownership'].min():.1f}% - {predictions_df['ownership'].max():.1f}%")
+            print(f"  Average ownership: {predictions_df['ownership'].mean():.1f}%")
+    else:
+        # Load ownership from file
+        ownership_df = pd.read_csv(ownership_path)
+
+        if 'ownership' not in ownership_df.columns:
+            raise ValueError(f"Ownership file must have 'ownership' column")
+
+        if 'playerID' not in ownership_df.columns:
+            raise ValueError(f"Ownership file must have 'playerID' column")
+
+        # Merge with predictions
+        predictions_df = predictions_df.merge(
+            ownership_df[['playerID', 'ownership']],
+            on='playerID',
+            how='left'
+        )
+
+        # Fill missing ownership with average
+        avg_ownership = ownership_df['ownership'].mean()
+        predictions_df['ownership'] = predictions_df['ownership'].fillna(avg_ownership)
+
+        if verbose:
+            print(f"\nLoaded ownership from {ownership_path}:")
+            print(f"  Ownership range: {predictions_df['ownership'].min():.1f}% - {predictions_df['ownership'].max():.1f}%")
+            print(f"  Average ownership: {predictions_df['ownership'].mean():.1f}%")
+
+    return predictions_df
+
+
+def generate_gpp_lineups(predictions_df, args, verbose=False):
+    """
+    Generate lineups using GPP genetic algorithm optimizer.
+
+    Parameters
+    ----------
+    predictions_df : pd.DataFrame
+        Predictions with ownership column
+    args : argparse.Namespace
+        Command-line arguments
+    verbose : bool
+        Print debug information
+
+    Returns
+    -------
+    List[Dict]
+        List of lineup dictionaries
+    """
+    # Ensure predictions have ceiling column
+    if 'ceiling' not in predictions_df.columns:
+        if verbose:
+            print("\nWarning: No 'ceiling' column found. Using 'predicted' as ceiling.")
+        predictions_df['ceiling'] = predictions_df['predicted']
+
+    # Initialize GPP genetic optimizer
+    optimizer = optimizer_registry.create(
+        'gpp_genetic',
+        constraints=[],  # Constraints are handled internally by optimizer
+        salary_cap=50000,
+        population_size=args.population_size,
+        generations=args.generations,
+        ownership_weight=args.ownership_weight,
+        random_seed=42
+    )
+
+    if verbose:
+        print(f"\nUsing GPP Genetic Algorithm Optimizer:")
+        print(f"  Population size: {args.population_size}")
+        print(f"  Generations: {args.generations}")
+        print(f"  Ownership weight: {args.ownership_weight}")
+
+    # Generate lineups
+    lineups = optimizer.optimize(predictions_df, num_lineups=args.num_lineups)
+
+    # Format lineups for output
+    formatted_lineups = []
+    for idx, lineup in enumerate(lineups):
+        formatted_lineups.append({
+            'lineup_id': idx + 1,
+            'total_salary': lineup['total_salary'],
+            'projected_points': lineup['total_predicted'],
+            'ceiling_points': lineup['total_ceiling'],
+            'avg_ownership': lineup['avg_ownership'],
+            'players': [
+                {
+                    'name': p['name'],
+                    'position': p['position'],
+                    'salary': p['salary'],
+                    'fppg': p['predicted'],
+                    'ceiling': p['ceiling'],
+                    'ownership': p['ownership']
+                }
+                for p in lineup['players']
+            ]
+        })
+
+    return formatted_lineups
 
 
 def create_contest_config(args):
@@ -237,32 +402,49 @@ def main():
     # Load predictions
     predictions_df = load_predictions(args.predictions, args.verbose)
 
-    # Create lineup generator
-    if args.contest_config:
-        generator = LineupGenerator(contest_config_path=args.contest_config)
-    else:
-        # Create temporary config from args
-        import tempfile
-        config = create_contest_config(args)
+    # Use GPP genetic optimizer if requested
+    if args.use_gpp_genetic:
+        # Load/estimate ownership projections
+        predictions_df = load_ownership(
+            args.ownership_file,
+            predictions_df,
+            args.verbose
+        )
 
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-            json.dump(config, f)
-            temp_config_path = f.name
-
-        generator = LineupGenerator(contest_config_path=temp_config_path)
-
+        # Generate lineups with GPP genetic optimizer
         if args.verbose:
-            print(f"Using {args.strategy} strategy:")
-            print(f"  Num lineups: {args.num_lineups}")
-            print(f"  Min salary: ${args.min_salary:,}")
-            if args.max_exposure:
-                print(f"  Max exposure: {args.max_exposure:.1%}")
+            print(f"\nGenerating {args.num_lineups} lineup(s) with GPP genetic algorithm...")
 
-    # Generate lineups
-    if args.verbose:
-        print(f"\nGenerating {args.num_lineups} lineup(s)...")
+        lineups = generate_gpp_lineups(predictions_df, args, args.verbose)
 
-    lineups = generator.generate_lineups(predictions_df)
+    else:
+        # Use standard lineup generator (pydfs-lineup-optimizer)
+        # Create lineup generator
+        if args.contest_config:
+            generator = LineupGenerator(contest_config_path=args.contest_config)
+        else:
+            # Create temporary config from args
+            import tempfile
+            config = create_contest_config(args)
+
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+                json.dump(config, f)
+                temp_config_path = f.name
+
+            generator = LineupGenerator(contest_config_path=temp_config_path)
+
+            if args.verbose:
+                print(f"Using {args.strategy} strategy:")
+                print(f"  Num lineups: {args.num_lineups}")
+                print(f"  Min salary: ${args.min_salary:,}")
+                if args.max_exposure:
+                    print(f"  Max exposure: {args.max_exposure:.1%}")
+
+        # Generate lineups
+        if args.verbose:
+            print(f"\nGenerating {args.num_lineups} lineup(s)...")
+
+        lineups = generator.generate_lineups(predictions_df)
 
     if not lineups:
         print("ERROR: No lineups generated. Check predictions and constraints.")

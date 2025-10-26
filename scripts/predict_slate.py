@@ -102,6 +102,12 @@ def parse_args():
         help="Print detailed progress information"
     )
 
+    parser.add_argument(
+        "--use-quantiles",
+        action="store_true",
+        help="Use quantile regression for variance prediction (floor/median/ceiling)"
+    )
+
     return parser.parse_args()
 
 
@@ -202,6 +208,7 @@ def train_and_predict(
     feature_config,
     model_config,
     test_date,
+    use_quantiles=False,
     verbose=False
 ):
     """Train per-player models and generate predictions."""
@@ -274,12 +281,28 @@ def train_and_predict(
             y_test = pd.to_numeric(test_row[target], errors='coerce')
 
             # Generate prediction
-            y_pred = model.predict(X_test)
+            if use_quantiles:
+                # Get quantile predictions with variance
+                quantile_preds = model.predict_with_variance(X_test)
+                y_pred = quantile_preds['median'].values[0]
+                floor_pred = quantile_preds['floor'].values[0]
+                ceiling_pred = quantile_preds['ceiling'].values[0]
+                variance = quantile_preds['variance'].values[0]
+                iqr = quantile_preds['iqr'].values[0]
+                cv = quantile_preds['cv'].values[0]
+            else:
+                # Standard point prediction
+                y_pred = model.predict(X_test)[0]
+                floor_pred = None
+                ceiling_pred = None
+                variance = None
+                iqr = None
+                cv = None
 
             # Store results - use pos_dfs from salaries
             primary_pos = player_info.get('pos_dfs', 'Unknown')
 
-            results.append({
+            result = {
                 'playerID': player_id,
                 'name': player_info['longName'],
                 'team': player_info['team'],
@@ -287,13 +310,23 @@ def train_and_predict(
                 'primary_position': primary_pos,
                 'allValidPositions': player_info.get('allValidPositions', []),
                 'actual': y_test.values[0],
-                'predicted': y_pred[0],
-                'error': y_pred[0] - y_test.values[0],
-                'abs_error': abs(y_pred[0] - y_test.values[0]),
-                'pct_error': abs(y_pred[0] - y_test.values[0]) / y_test.values[0] * 100 if y_test.values[0] > 0 else 0,
+                'predicted': y_pred,
+                'error': y_pred - y_test.values[0],
+                'abs_error': abs(y_pred - y_test.values[0]),
+                'pct_error': abs(y_pred - y_test.values[0]) / y_test.values[0] * 100 if y_test.values[0] > 0 else 0,
                 'training_samples': len(training_clean),
                 'minutes': player_info['mins']
-            })
+            }
+
+            # Add quantile predictions if available
+            if use_quantiles:
+                result['floor'] = floor_pred
+                result['ceiling'] = ceiling_pred
+                result['variance'] = variance
+                result['iqr'] = iqr
+                result['cv'] = cv
+
+            results.append(result)
 
         except Exception as e:
             failed_players.append({
@@ -328,7 +361,12 @@ def main():
     feature_config = load_feature_config(args.features)
 
     # Load model configuration
-    model_config_path = project_root / 'config' / 'models' / f'{args.model}.yaml'
+    # If using quantiles, override to quantile_regression config
+    if args.use_quantiles:
+        model_config_path = project_root / 'config' / 'models' / 'quantile_regression.yaml'
+    else:
+        model_config_path = project_root / 'config' / 'models' / f'{args.model}.yaml'
+
     model_config = load_yaml(str(model_config_path))
 
     if args.verbose:
@@ -336,6 +374,7 @@ def main():
         print(f"  Date: {args.date}")
         print(f"  Features: {args.features}")
         print(f"  Model: {args.model} ({model_config.get('model_type', 'xgboost')})")
+        print(f"  Use quantiles: {args.use_quantiles}")
         print(f"  Num seasons: {args.num_seasons}")
         print(f"  Min games: {args.min_games}")
 
@@ -364,7 +403,8 @@ def main():
         feature_config,
         model_config,
         args.date,
-        args.verbose
+        use_quantiles=args.use_quantiles,
+        verbose=args.verbose
     )
 
     # Add salary tiers for analysis

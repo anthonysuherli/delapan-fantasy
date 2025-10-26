@@ -62,11 +62,11 @@ if missing_cols:
     print(f"   WARNING: Missing required columns: {missing_cols}")
     print(f"   Available columns: {training_data.columns.tolist()}")
 else:
-    print(f"   ✓ All required columns present")
+    print(f"   [OK] All required columns present")
 
 try:
     transformed = pipeline.fit_transform(training_data)
-    print(f"   ✓ Transformation successful")
+    print(f"   [OK] Transformation successful")
     print(f"   Shape: {transformed.shape}")
 
     # Check for new contextual features
@@ -96,13 +96,13 @@ try:
                 print(f"     Max: {transformed[feat].max():.0f}")
                 print(f"     Null count: {transformed[feat].isna().sum()}")
     else:
-        print(f"\n   ✗ No contextual features found!")
+        print(f"\n   [ERROR] No contextual features found!")
         print(f"   New features: {new_features[:10]}")
 
-    print(f"\n✓ Test completed successfully")
+    print(f"\n[OK] Test completed successfully")
 
 except Exception as e:
-    print(f"\n✗ Error during transformation: {e}")
+    print(f"\n[ERROR] Error during transformation: {e}")
     import traceback
     traceback.print_exc()
     sys.exit(1)

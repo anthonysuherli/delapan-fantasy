@@ -1,0 +1,15 @@
+model_type: minutes
+description: "Minutes projection model - predicts player playing time"
+
+hyperparameters:
+  max_depth: 4
+  learning_rate: 0.05
+  n_estimators: 100
+  min_child_weight: 5
+  subsample: 0.8
+  colsample_bytree: 0.8
+  random_state: 42
+  tree_method: hist
+
+  # Minutes-specific parameters
+  min_minutes_threshold: 15  # Minimum minutes to consider player viable

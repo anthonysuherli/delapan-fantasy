@@ -33,6 +33,8 @@ Registered models in `src/models/registry.py`:
 - `random_forest`: Random forest baseline
 - `stacking`: Multi-model ensemble with meta-learner
 - `bagging`: Bootstrap aggregating for variance reduction
+- `minutes`: Minutes projection model (filters low-minute players)
+- `quantile`: Quantile regression for floor/median/ceiling predictions
 
 **Adding new models:**
 ```python
@@ -51,7 +53,8 @@ python scripts/predict_slate.py --model my_model_config
 
 ### Optimizers (Registry Pattern)
 Registered in `src/optimization/registry.py`:
-- `linear_program`: Integer linear programming via PuLP
+- `linear_program`: Integer linear programming via PuLP (cash game optimization)
+- `gpp_genetic`: Genetic algorithm for GPP tournaments (ceiling optimization with ownership)
 - `lineup_generator`: pydfs-lineup-optimizer with DraftKings constraints
 
 ### Ensemble Models
@@ -132,6 +135,36 @@ python scripts/predict_slate.py --date 20250210 --features default_features --mo
 python scripts/generate_lineups.py --predictions predictions.csv --num-lineups 20
 python scripts/generate_lineups.py --predictions predictions.csv --strategy aggressive
 ```
+
+### GPP Tournament Workflow (Advanced)
+
+**Step 1: Generate predictions with variance estimates (quantile regression)**
+```bash
+python scripts/predict_slate.py --date 20250210 --use-quantiles --features full_features --analyze
+```
+
+**Step 2: Generate tournament lineups with GPP genetic optimizer**
+```bash
+# Basic GPP lineups (uses salary-based ownership estimates)
+python scripts/generate_lineups.py --predictions predictions.csv --use-gpp-genetic --num-lineups 20
+
+# Advanced: Custom ownership projections
+python scripts/generate_lineups.py --predictions predictions.csv \
+  --use-gpp-genetic \
+  --ownership-file ownership.csv \
+  --num-lineups 20 \
+  --ownership-weight 0.4 \
+  --population-size 150 \
+  --generations 100
+```
+
+**Parameters:**
+- `--use-quantiles`: Use quantile regression for ceiling/floor predictions
+- `--use-gpp-genetic`: Use genetic algorithm optimizer for tournaments
+- `--ownership-file`: CSV with playerID and ownership columns (optional)
+- `--ownership-weight`: Penalty for high ownership (0.0-1.0, default 0.3)
+- `--population-size`: GA population size (default 100)
+- `--generations`: Number of GA iterations (default 50)
 
 ### Walk-Forward Backtest Simulation
 
@@ -294,9 +327,28 @@ PlaymakingMetricsTransformer (src/features/transformers/playmaking_metrics.py):
 ImpactMetricsTransformer (src/features/transformers/impact_metrics.py):
 - GameScore: Hollinger's composite performance metric
 
+ContextualFeaturesTransformer (src/features/transformers/contextual.py):
+- home_game: 1 if playing at home, 0 if away (parsed from gameID)
+- rest_days: Days since last game (capped at 7)
+- back_to_back: 1 if playing on consecutive days
+- days_off_3plus: 1 if 3+ days rest
+- Config: config/features/contextual_features.yaml
+
+OpponentStatsTransformer (src/features/transformers/opponent_stats.py):
+- opp_pace: Opponent pace (possessions per game)
+- opp_def_rating_last_10: Opponent defensive rating (recent 10 games)
+- Position-specific points allowed: pg/sg/sf/pf/c_fpts_allowed
+- is_home_team: Home court advantage indicator
+- opp_3pt_defense_rank, opp_rest_days, opp_foul_rate, opp_turnover_rate
+- Matchup-based features for opponent defensive strength
+
 FeatureConfig (src/utils/feature_config.py):
 - Load feature configurations from YAML files
-- Available configs: default_features.yaml (21 stats), base_features.yaml (6 stats)
+- Available configs:
+  - base_features.yaml: 6 core stats + efficiency metrics
+  - default_features.yaml: 21 statistics, 147 features with rolling windows
+  - contextual_features.yaml: Includes contextual transformers
+  - full_features.yaml: Complete feature set with all transformers
 - Build pipelines from configuration
 - Supports configuration versioning
 
@@ -334,6 +386,23 @@ StackingModel (src/models/stacking_model.py):
 - 5-fold CV for out-of-fold training
 - Config: config/models/stacked_xgb_rf.yaml
 
+MinutesProjectionModel (src/models/minutes_model.py):
+- Separate model for predicting player minutes
+- Filters low-minute players before fantasy point prediction
+- XGBoost regressor targeting minutes played
+- predict_with_threshold(): Returns predictions and mask for players above threshold
+- Config: config/models/minutes_projection.yaml
+- Min minutes threshold: 15 (configurable)
+
+QuantileRegressionModel (src/models/quantile_model.py):
+- Predicts floor (10th), median (50th), ceiling (90th) percentiles
+- Enables variance estimation and confidence intervals
+- Used for GPP tournament optimization (high-ceiling strategy)
+- predict_with_variance(): Returns floor/median/ceiling/variance/iqr/cv
+- Three separate XGBoost models (one per quantile)
+- Config: config/models/quantile_regression.yaml
+- Usage: `python scripts/predict_slate.py --date 20250210 --use-quantiles`
+
 ### Optimization: src/optimization/
 
 BaseOptimizer (src/optimization/base.py):
@@ -347,6 +416,20 @@ LinearProgramOptimizer (src/optimization/optimizers/linear_program.py):
 - Uses PuLP for integer linear programming
 - Maximizes projected points subject to salary cap
 - salary_cap: Default $50,000 for DraftKings
+
+GPPGeneticOptimizer (src/optimization/optimizers/gpp_genetic.py):
+- Genetic algorithm optimizer for GPP tournaments
+- Optimizes for ceiling projections (90th percentile) instead of expected value
+- Ownership penalty to favor contrarian, low-ownership plays
+- Population-based evolution (selection, crossover, mutation)
+- Generates diverse, uncorrelated lineups for multi-entry tournaments
+- Parameters:
+  - population_size: Number of lineups per generation (default 100)
+  - generations: Number of evolutionary iterations (default 50)
+  - ownership_weight: Penalty for high ownership (default 0.3)
+  - diversity_weight: Bonus for lineup variance (default 0.2)
+- Usage: `python scripts/generate_lineups.py --predictions predictions.csv --use-gpp-genetic --num-lineups 20`
+- Requires ceiling projections from quantile regression model
 
 DraftKings constraints (src/optimization/constraints/draftkings.py):
 - Salary cap $50,000
