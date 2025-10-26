@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.optimization.lineup_generator import LineupGenerator
 from src.optimization.contest_manager import ContestManager
-from src.optimization.backtest_lineup_integration import BacktestWithLineups
+from src.optimization.deprecated.backtest_lineup_integration import BacktestWithLineups
 
 # Setup logging
 logging.basicConfig(

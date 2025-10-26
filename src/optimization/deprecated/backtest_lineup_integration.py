@@ -9,9 +9,9 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 
-from .lineup_generator import LineupGenerator
-from .contest_manager import ContestManager
-from ..evaluation.backtest import WalkForwardBacktest
+from ..lineup_generator import LineupGenerator
+from ..contest_manager import ContestManager
+from ...evaluation.deprecated.backtest.walk_forward import WalkForwardBacktest
 
 logger = logging.getLogger(__name__)
 

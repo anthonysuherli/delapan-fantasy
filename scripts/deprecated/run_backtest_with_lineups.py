@@ -33,7 +33,7 @@ from datetime import datetime, timedelta
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.optimization.backtest_lineup_integration import BacktestWithLineups
+from src.optimization.deprecated.backtest_lineup_integration import BacktestWithLineups
 from src.data.loaders.historical_loader import HistoricalDataLoader
 from src.filters import ColumnFilter, InjuryFilter
 from src.filters.player_filters import PlayerIDFilter, PlayerNameFilter, PlayerIDFromCSVFilter
