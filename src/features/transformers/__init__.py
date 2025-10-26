@@ -7,6 +7,7 @@ from .opponent_stats import OpponentStatsTransformer
 from .efficiency_metrics import EfficiencyMetricsTransformer
 from .playmaking_metrics import PlaymakingMetricsTransformer
 from .impact_metrics import ImpactMetricsTransformer
+from .contextual import ContextualFeaturesTransformer
 
 __all__ = [
     'RollingStatsTransformer',
@@ -18,4 +19,5 @@ __all__ = [
     'EfficiencyMetricsTransformer',
     'PlaymakingMetricsTransformer',
     'ImpactMetricsTransformer',
+    'ContextualFeaturesTransformer',
 ]

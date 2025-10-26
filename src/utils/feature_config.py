@@ -127,6 +127,7 @@ class FeatureConfig:
         from src.features.transformers.efficiency_metrics import EfficiencyMetricsTransformer
         from src.features.transformers.playmaking_metrics import PlaymakingMetricsTransformer
         from src.features.transformers.impact_metrics import ImpactMetricsTransformer
+        from src.features.transformers.contextual import ContextualFeaturesTransformer
 
         pipeline = feature_pipeline_class()
 
@@ -200,6 +201,12 @@ class FeatureConfig:
                 transformer = ImpactMetricsTransformer()
                 pipeline.add(transformer)
                 logger.info(f"Added ImpactMetricsTransformer: GameScore")
+
+            elif transformer_type == 'contextual':
+                max_rest_days = params.get('max_rest_days', 7)
+                transformer = ContextualFeaturesTransformer(max_rest_days=max_rest_days)
+                pipeline.add(transformer)
+                logger.info(f"Added ContextualFeaturesTransformer: home/away, rest days, back-to-back")
 
             else:
                 logger.warning(f"Unknown transformer type: {transformer_type}")
