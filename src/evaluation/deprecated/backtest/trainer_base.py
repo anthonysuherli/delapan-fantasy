@@ -228,6 +228,54 @@ class BacktestTrainer(ABC):
         self.backtest.run_predictions_dir.mkdir(parents=True, exist_ok=True)
         self.backtest.run_checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
+    def _expand_nested_salaries(self, salaries_df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Expand nested JSON salaries data to flat DataFrame.
+
+        If salaries_df still has nested structure (draftkings/fanduel columns),
+        extract and flatten to player records with playerID.
+        """
+        # Check if data needs expansion
+        if 'draftkings' not in salaries_df.columns:
+            # Already expanded or invalid structure
+            return salaries_df
+
+        try:
+            dk_data = salaries_df['draftkings'].iloc[0]
+            if not isinstance(dk_data, (list, tuple)):
+                return salaries_df
+
+            expanded_data = []
+            for player in dk_data:
+                if isinstance(player, dict):
+                    player_data = player.copy()
+
+                    # Normalize playerID column
+                    if 'playerID' not in player_data:
+                        for alias in ('playerId', 'player_id', 'playerid', 'id'):
+                            if alias in player_data:
+                                player_data['playerID'] = str(player_data.get(alias))
+                                break
+                    else:
+                        player_data['playerID'] = str(player_data.get('playerID'))
+
+                    # Normalize player name
+                    if 'playerName' not in player_data:
+                        for name_alias in ('longName', 'fullName', 'name'):
+                            if name_alias in player_data:
+                                player_data['playerName'] = player_data.get(name_alias)
+                                break
+
+                    expanded_data.append(player_data)
+
+            if expanded_data:
+                return pd.DataFrame(expanded_data)
+
+        except Exception as e:
+            logger.warning(f"Failed to expand nested salaries data: {e}")
+
+        return salaries_df
+
     def _pre_scan_slates(self, slate_dates: List[str]):
         """
         Pre-scan slates to identify filtered players.
@@ -251,16 +299,27 @@ class BacktestTrainer(ABC):
                 if salaries_df.empty:
                     continue
 
-                # Apply injury features
+                # Ensure salaries data is expanded from nested structure
+                salaries_df = self._expand_nested_salaries(salaries_df)
+
+                if salaries_df.empty or 'playerID' not in salaries_df.columns:
+                    logger.debug(f"No valid salaries data for {test_date}, skipping")
+                    continue
+
+                # (No direct analog to the training period calculation and backtest instantiation
+                # in this pre-scan method. The original logic is to apply injury features and filters.)
                 injuries_data = slate_data.get('injuries', pd.DataFrame())
                 from src.features.transformers.injury import InjuryTransformer
                 injury_transformer = InjuryTransformer()
                 injury_transformer.fit(salaries_df)
                 salaries_df = injury_transformer.transform(salaries_df, injuries_data)
 
-                # Apply filters
+                logger.info(f'filters : {self.backtest.player_filters}')
+                # Apply filters (each may further reduce the player pool)
                 for pf in self.backtest.player_filters:
-                    salaries_df = pf.apply(salaries_df)
+                    filtered = pf.apply(salaries_df)
+                    if not filtered.empty:
+                        salaries_df = filtered
 
                 # Collect player IDs
                 if 'playerID' in salaries_df.columns:
@@ -471,9 +530,23 @@ class BacktestTrainer(ABC):
             }
 
         # Convert results to DataFrame for easier analysis
-        results_df = pd.DataFrame(self.results)
+        # Handle nested 'benchmark' dict by excluding it initially
+        results_for_df = []
+        for result in self.results:
+            # Extract top-level metrics, excluding nested dicts
+            row = {k: v for k, v in result.items() if not isinstance(v, dict)}
+            results_for_df.append(row)
+        
+        results_df = pd.DataFrame(results_for_df)
 
-        # Filter out invalid results
+        # Filter out invalid results (handle missing num_players column)
+        if 'num_players' not in results_df.columns:
+            logger.warning("No 'num_players' column found in results")
+            return {
+                'error': 'No num_players column in results',
+                'config': self.backtest.config
+            }
+        
         valid_results = results_df[results_df['num_players'] > 0].copy()
 
         if valid_results.empty:
@@ -483,9 +556,16 @@ class BacktestTrainer(ABC):
             }
 
         # Calculate aggregate metrics
+        num_slates = len(valid_results)
+        total_players = int(valid_results['num_players'].sum())
+        
         aggregated = {
-            'num_slates': len(valid_results),
-            'total_players_evaluated': valid_results['num_players'].sum(),
+            'num_slates': num_slates,
+            'total_players_evaluated': total_players,
+            # Backward compatibility aliases
+            'test_slates': num_slates,
+            'total_players': total_players,
+            # Other metrics
             'avg_players_per_slate': valid_results['num_players'].mean(),
             'model_mean_mape': valid_results['model_mape'].mean(),
             'model_median_mape': valid_results['model_mape'].median(),
@@ -497,18 +577,18 @@ class BacktestTrainer(ABC):
             'model_std_correlation': valid_results['model_corr'].std(),
             'daily_results': valid_results.reset_index(drop=True),  # Convert to clean DataFrame
             'config': self.backtest.config,
-            'date_range': f"{self.backtest.test_start} to {self.backtest.test_end}"
+            'date_range': f"{self.backtest.test_start} to {self.backtest.test_end}",
+            'output_dir': str(self.backtest.run_output_dir)
         }
 
-        # Add benchmark metrics if available
-        if 'benchmark' in valid_results.columns and not valid_results['benchmark'].isna().all():
-            bench_col = valid_results['benchmark'].dropna()
-            if not bench_col.empty:
-                bench_mapes = [b.get('model_mape', np.nan) for b in bench_col if isinstance(b, dict)]
-                if bench_mapes and not all(np.isnan(bench_mapes)):
-                    aggregated['benchmark_mean_mape'] = np.nanmean(bench_mapes)
-                    aggregated['benchmark_median_mape'] = np.nanmedian(bench_mapes)
-                    aggregated['mape_improvement'] = aggregated['model_mean_mape'] - aggregated['benchmark_mean_mape']
+        # Add benchmark metrics if available (from original results, not DataFrame)
+        benchmark_results = [r.get('benchmark') for r in self.results if 'benchmark' in r and isinstance(r['benchmark'], dict)]
+        if benchmark_results:
+            bench_mapes = [b.get('model_mape', np.nan) for b in benchmark_results]
+            if bench_mapes and not all(np.isnan(bench_mapes)):
+                aggregated['benchmark_mean_mape'] = np.nanmean(bench_mapes)
+                aggregated['benchmark_median_mape'] = np.nanmedian(bench_mapes)
+                aggregated['mape_improvement'] = aggregated['model_mean_mape'] - aggregated['benchmark_mean_mape']
 
         return aggregated
 

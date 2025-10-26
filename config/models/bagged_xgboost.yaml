@@ -1,0 +1,34 @@
+# Bagging Ensemble Configuration
+# Bootstrap aggregating with multiple XGBoost instances for variance reduction
+
+model_type: bagging
+
+# Number of base models to train
+n_estimators: 10
+
+# Fraction of training samples for each model (with replacement)
+bootstrap_samples: 0.8
+
+# Fraction of features for each model (without replacement)
+bootstrap_features: 1.0  # Use all features
+
+# Base model configuration
+base_model:
+  type: xgboost
+  params:
+    max_depth: 6
+    learning_rate: 0.05
+    n_estimators: 100  # Fewer trees per model since we're ensembling
+    min_child_weight: 3
+    subsample: 0.8
+    colsample_bytree: 0.8
+    objective: reg:squarederror
+    random_state: 42
+    tree_method: hist
+
+# Model description
+description: >
+  Bagging ensemble with 10 XGBoost models trained on
+  bootstrap samples (80% of data each). Predictions are
+  averaged for improved stability and reduced variance.
+  Each model uses all features but different data samples.

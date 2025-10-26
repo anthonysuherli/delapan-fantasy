@@ -56,6 +56,10 @@ registry = ModelRegistry()
 
 from .xgboost_model import XGBoostModel
 from .random_forest_model import RandomForestModel
+from .stacking_model import StackingModel
+from .bagging_model import BaggingModel
 
 registry.register('xgboost', XGBoostModel)
 registry.register('random_forest', RandomForestModel)
+registry.register('stacking', StackingModel)
+registry.register('bagging', BaggingModel)

@@ -1,0 +1,47 @@
+# Stacking Ensemble Configuration
+# Combines XGBoost and Random Forest predictions using XGBoost meta-learner
+
+model_type: stacking
+
+# Base models to stack
+base_models:
+  - type: xgboost
+    params:
+      max_depth: 6
+      learning_rate: 0.05
+      n_estimators: 200
+      min_child_weight: 5
+      subsample: 0.8
+      colsample_bytree: 0.8
+      objective: reg:squarederror
+      random_state: 42
+      tree_method: hist
+
+  - type: random_forest
+    params:
+      n_estimators: 100
+      max_depth: 10
+      min_samples_split: 5
+      min_samples_leaf: 2
+      random_state: 42
+      n_jobs: -1
+
+# Meta-learner that combines base model predictions
+meta_model:
+  type: xgboost
+  params:
+    max_depth: 3  # Simpler model for meta-learning
+    learning_rate: 0.1
+    n_estimators: 50
+    objective: reg:squarederror
+    random_state: 42
+    tree_method: hist
+
+# Number of cross-validation folds for out-of-fold predictions
+cv_folds: 5
+
+# Model description
+description: >
+  Stacking ensemble combining XGBoost (strong learner)
+  and Random Forest (diversity) with XGBoost meta-learner.
+  Uses 5-fold CV for out-of-fold training predictions.

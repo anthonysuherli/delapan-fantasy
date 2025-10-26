@@ -1,27 +1,29 @@
-from src.evaluation.backtest.validator import Validator
 from src.evaluation.metrics.accuracy import MAPEMetric, RMSEMetric, MAEMetric, CorrelationMetric
 from src.evaluation.metrics.registry import MetricRegistry, registry
+from src.evaluation.walk_forward_simulation import WalkForwardSimulation
+from src.evaluation.backtest_report import BacktestReport
 
-try: 
+try:
     registry.register('mape', MAPEMetric)
-except: 
+except:
     pass
-try: 
+try:
     registry.register('rmse', RMSEMetric)
-except: 
+except:
     pass
-try: 
+try:
     registry.register('mae', MAEMetric)
-except: 
+except:
     pass
-try: 
+try:
     registry.register('correlation', CorrelationMetric)
-except: 
+except:
     pass
 
 
 __all__ = [
-    'Validator',
+    'WalkForwardSimulation',
+    'BacktestReport',
     'MAPEMetric',
     'RMSEMetric',
     'MAEMetric',

@@ -133,6 +133,22 @@ class HistoricalDataLoader(DataLoader):
                                     # Convert salary to int
                                     if 'salary' in player_data:
                                         player_data['salary'] = int(player_data['salary'])
+                                    # Normalize common player id/name keys to expected schema
+                                    if 'playerID' not in player_data:
+                                        for alias in ('playerId', 'player_id', 'playerid', 'id'):
+                                            if alias in player_data:
+                                                player_data['playerID'] = str(player_data.get(alias))
+                                                break
+                                    else:
+                                        # ensure string type
+                                        player_data['playerID'] = str(player_data.get('playerID'))
+
+                                    # Normalize player name keys
+                                    if 'playerName' not in player_data:
+                                        for name_alias in ('longName', 'fullName', 'name'):
+                                            if name_alias in player_data:
+                                                player_data['playerName'] = player_data.get(name_alias)
+                                                break
                                     expanded_data.append(player_data)
 
                             if expanded_data:
@@ -191,8 +207,13 @@ class HistoricalDataLoader(DataLoader):
                     SELECT * FROM read_parquet('{path_pattern}', hive_partitioning=1)
                     WHERE {date_col} >= '{start_date}' AND {date_col} <= '{end_date}'
                 """
-                
+
                 data = self.conn.execute(query).df()
+
+                # Convert numeric columns for player logs
+                if data_type == 'player_logs_extracted' and not data.empty:
+                    data = self._convert_numeric_columns(data)
+
                 historical_data[data_type] = data
 
                 if not data.empty:
@@ -228,6 +249,32 @@ class HistoricalDataLoader(DataLoader):
             'player_logs': 'gameDate'
         }
         return date_columns.get(data_type, 'gameDate')
+
+    def _convert_numeric_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Convert stat columns from object to numeric types.
+
+        Tank01 API stores all values as strings. This method converts
+        numeric columns to appropriate float types for feature engineering.
+
+        Args:
+            df: DataFrame with potential string columns
+
+        Returns:
+            DataFrame with numeric columns converted
+        """
+        numeric_cols = [
+            'TOV', 'PF', 'fga', 'fgm', 'fgp', 'fta', 'ftm', 'ftp',
+            'tptfga', 'tptfgm', 'tptfgp', 'OffReb', 'DefReb',
+            'plusMinus', 'usage', 'tech', 'pts', 'reb', 'ast',
+            'stl', 'blk', 'mins', 'salary'
+        ]
+
+        for col in numeric_cols:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+
+        return df
 
     def load_historical_player_logs(
         self,
@@ -313,6 +360,9 @@ class HistoricalDataLoader(DataLoader):
                 logger.info(
                     f"Loaded {len(df)} player logs from {df['gameDate'].min()} to {df['gameDate'].max()}"
                 )
+
+            # Convert numeric columns from string to float
+            df = self._convert_numeric_columns(df)
 
             return df
 

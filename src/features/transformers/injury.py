@@ -46,10 +46,16 @@ class InjuryTransformer(FeatureTransformer):
         if not self._fitted:
             raise ValueError(f"Transformer '{self.name}' has not been fitted")
 
-        if 'playerID' not in data.columns:
-            raise ValueError("Data must contain 'playerID' column")
-
+        # Allow common alternative player id column names and normalize to 'playerID'
         df = data.copy()
+        if 'playerID' not in df.columns:
+            for alias in ('playerId', 'player_id', 'playerid', 'player', 'id'):
+                if alias in df.columns:
+                    # create normalized column as string to avoid merge type issues
+                    df['playerID'] = df[alias].astype(str)
+                    break
+            else:
+                raise ValueError("Data must contain 'playerID' column (or an alias like 'playerId', 'player_id' or 'id')")
 
         if injuries is None or injuries.empty:
             df['injury_status'] = 'Healthy'
@@ -64,8 +70,14 @@ class InjuryTransformer(FeatureTransformer):
 
         injuries_processed = injuries.copy()
 
+        # Normalize injuries dataframe player id column as well
         if 'playerID' not in injuries_processed.columns:
-            raise ValueError("Injuries DataFrame must contain 'playerID' column")
+            for alias in ('playerId', 'player_id', 'playerid', 'player', 'id'):
+                if alias in injuries_processed.columns:
+                    injuries_processed['playerID'] = injuries_processed[alias].astype(str)
+                    break
+            else:
+                raise ValueError("Injuries DataFrame must contain 'playerID' column (or an alias like 'playerId', 'player_id' or 'id')")
 
         injuries_processed = injuries_processed[
             ['playerID', 'designation', 'injDate', 'injReturnDate', 'description']

@@ -124,6 +124,9 @@ class FeatureConfig:
         from src.features.transformers.target import TargetTransformer
         from src.features.transformers.injury import InjuryTransformer
         from src.features.transformers.opponent_stats import OpponentStatsTransformer
+        from src.features.transformers.efficiency_metrics import EfficiencyMetricsTransformer
+        from src.features.transformers.playmaking_metrics import PlaymakingMetricsTransformer
+        from src.features.transformers.impact_metrics import ImpactMetricsTransformer
 
         pipeline = feature_pipeline_class()
 
@@ -173,7 +176,7 @@ class FeatureConfig:
                 features = params.get('features', None)
                 lookback_days = params.get('lookback_days', 365)
                 recent_games_window = params.get('recent_games_window', 10)
-                
+
                 transformer = OpponentStatsTransformer(
                     features=features,
                     lookback_days=lookback_days,
@@ -182,6 +185,21 @@ class FeatureConfig:
                 pipeline.add(transformer)
                 feature_list = features if features else transformer.default_features
                 logger.info(f"Added OpponentStatsTransformer: {len(feature_list)} features, lookback={lookback_days}d")
+
+            elif transformer_type == 'efficiency_metrics':
+                transformer = EfficiencyMetricsTransformer()
+                pipeline.add(transformer)
+                logger.info(f"Added EfficiencyMetricsTransformer: eFG%, TS%, FTR, TotalReb")
+
+            elif transformer_type == 'playmaking_metrics':
+                transformer = PlaymakingMetricsTransformer()
+                pipeline.add(transformer)
+                logger.info(f"Added PlaymakingMetricsTransformer: AST/TO ratio")
+
+            elif transformer_type == 'impact_metrics':
+                transformer = ImpactMetricsTransformer()
+                pipeline.add(transformer)
+                logger.info(f"Added ImpactMetricsTransformer: GameScore")
 
             else:
                 logger.warning(f"Unknown transformer type: {transformer_type}")
