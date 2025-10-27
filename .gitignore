@@ -37,3 +37,11 @@ htmlcov/
 *~
 
 .DS_Store
+
+# Next.js scenario builder workspace
+ui/.next/
+ui/node_modules/
+ui/.turbo/
+ui/out/
+ui/dist/
+!ui/src/lib/
