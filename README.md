@@ -1,89 +1,17 @@
-
 # NBA DFS ML Pipeline
 
 Modular machine learning system for NBA DFS optimization on DraftKings with per-player XGBoost models.
 
 ## Architecture
+
+| col1 | col2 | col3 |
+| ---- | ---- | ---- |
+|      |      |      |
+|      |      |      |
+
 ```mermaid
-graph TD
-      A["CLI Arguments<br/>--test-start, --test-end<br/>--model-type,
-  --per-player<br/>--contest-config, etc."] --> B["Parse Arguments"]
 
-      B --> C["Determine Training Period<br/>train_start → train_end"]
-
-      D["Model Config YAML<br/>hyperparameters"] --> E["Load
-  Model<br/>Configuration"]
-
-      F["Contest Config JSON<br/>salary cap, roster<br/>construction"]
-  --> G["Load Contest<br/>Configuration"]
-
-      H["Player Filters<br/>salary, injury,<br/>IDs, names, CSV"] -->
-  I["Build Filter<br/>Pipeline"]
-
-      C --> J["HistoricalDataLoader<br/>get_season_start_date"]
-      J --> K["Load Training Data<br/>train_start:train_end"]
-      K --> L["Load Test Data<br/>test_start:test_end"]
-
-      E --> M["BacktestWithLineups<br/>Initialization"]
-      G --> M
-      I --> M
-      L --> M
-
-      M --> N["Feature Engineering<br/>feature_config"]
-      N --> O["Train Models<br/>per-player or slate-level"]
-
-      O --> P["Walk-Forward<br/>Backtesting Loop"]
-
-      P --> Q["Generate Predictions<br/>test slate date"]
-      Q --> R["Apply Player Filters<br/>salary, injuries,<br/>custom
-  filters"]
-
-      R --> S["Lineup Optimization<br/>pydfs-lineup-optimizer"]
-      S --> T["Generate N Lineups<br/>num_lineups parameter"]
-
-      T --> U["Score Lineups<br/>vs Actual Results"]
-      U --> V["Track Performance<br/>correlation, error %"]
-
-      V --> W["Recalibrate Model?<br/>recalibrate_days"]
-      W -->|Yes| O
-      W -->|No| X{More Test<br/>Slates?}
-
-      X -->|Yes| Q
-      X -->|No| Y["Aggregate Results"]
-
-      Y --> Z["Save Outputs"]
-
-      Z --> Z1["CSV Lineups<br/>DraftKings format"]
-      Z --> Z2["JSON Lineups<br/>Full details"]
-      Z --> Z3["Performance Report<br/>metrics & analysis"]
-      Z --> Z4["Saved Models<br/>pkl format"]
-      Z --> Z5["Predictions<br/>parquet files"]
-
-      Z1 --> AA["Output Directory<br/>data/backtest_results"]
-      Z2 --> AA
-      Z3 --> AA
-      Z4 --> AA
-      Z5 --> AA
-
-      AA --> AB["Summary Report<br/>test_slates<br/>total_players<br/>avg
-  _correlation<br/>avg_error_pct"]
-
-      style A fill:#e1f5ff
-      style D fill:#e1f5ff
-      style F fill:#e1f5ff
-      style H fill:#e1f5ff
-      style K fill:#fff3e0
-      style L fill:#fff3e0
-      style O fill:#f3e5f5
-      style Q fill:#f3e5f5
-      style T fill:#e8f5e9
-      style U fill:#e8f5e9
-      style AA fill:#fce4ec
-      style AB fill:#fce4ec
-
-    end
 ```
-
 
 ```mermaid
 graph TB
@@ -215,18 +143,21 @@ delapan-fantasy/
 All five layers implemented with production-ready daily DFS workflow. Modular slate prediction and lineup optimization via command-line scripts.
 
 ### Data Layer
+
 - Tank01 RapidAPI client with caching
 - Parquet storage (date-partitioned)
 - Historical data loader with temporal validation
 - 3+ seasons of NBA data collected
 
 ### Feature Layer
+
 - YAML-configured feature pipelines
 - Rolling stats (3, 5, 10 game windows) with EWMA transformers
 - NEW: Advanced efficiency metrics (eFG%, TS%, FTR, GameScore, AST/TO ratio)
 - 147+ features from 21 box score statistics + efficiency metrics
 
 ### Model Layer
+
 - Per-player XGBoost models (primary)
 - Random Forest baseline
 - NEW: Ensemble models (Stacking, Bagging)
@@ -234,12 +165,14 @@ All five layers implemented with production-ready daily DFS workflow. Modular sl
 - Model serialization with metadata
 
 ### Optimization Layer
+
 - Linear programming via PuLP
 - pydfs-lineup-optimizer integration
 - DraftKings constraints (8 players, $50k salary cap)
 - Multi-lineup generation with exposure management
 
 ### Evaluation Layer
+
 - Position and salary tier performance analysis
 - MAPE cross-tabulation (salary × position)
 - Segmented metrics (analyze_by_salary, analyze_by_position)
@@ -249,6 +182,7 @@ All five layers implemented with production-ready daily DFS workflow. Modular sl
 ## Performance Benchmarks
 
 ### Phase 2 Validation (2025-02-05) - Full Slate
+
 - Players predicted: 241/248 (97.2% coverage)
 - Overall: 58.2% MAPE, 0.683 correlation
 - Elite players ($8k+): 33.7% MAPE (near 30% target)
@@ -256,12 +190,14 @@ All five layers implemented with production-ready daily DFS workflow. Modular sl
 - Best position: Centers at 58.2% MAPE
 
 ### Salary Tier Breakdown
+
 - $9k+: 30.4% MAPE (11 players) ✓ Target met
 - $7-9k: 37.3% MAPE (23 players)
 - $5-7k: 61.9% MAPE (44 players)
 - $3-5k: 114.7% MAPE (163 players) - High variance in low-output players
 
 ### Position Performance
+
 - Centers (C): 58.2% MAPE (35 players)
 - Power Forwards (PF): 62.7% MAPE (43 players)
 - Point Guards (PG): 63.9% MAPE (45 players)
@@ -269,6 +205,7 @@ All five layers implemented with production-ready daily DFS workflow. Modular sl
 - Shooting Guards (SG): 161.5% MAPE (65 players) - Needs improvement
 
 ### Best Segments (Salary × Position)
+
 - $7-9k PF: 13.4% MAPE (5 players)
 - $9k+ C: 17.7% MAPE (3 players)
 - $7-9k PG: 19.6% MAPE (9 players)
@@ -288,6 +225,7 @@ features = pipeline.fit_transform(training_data)
 ```
 
 Configuration files in [config/features/](config/features/):
+
 - default_features.yaml: 21 statistics, 147 features
 - base_features.yaml: 6 core statistics for rapid experimentation
 
@@ -330,6 +268,7 @@ Two deployment architectures supported:
 2. **Separated Architecture**: Code and data in different locations
 
 **Integrated:**
+
 ```
 delapan-fantasy/
   ├── src/
@@ -338,6 +277,7 @@ delapan-fantasy/
 ```
 
 **Separated:**
+
 ```
 C:\Code\delapan-fantasy\    # Code (from git)
 D:\NBA_Data\                # Data (persistent)
@@ -353,6 +293,7 @@ D:\NBA_Data\                # Data (persistent)
 - **[docs/GPU_TRAINING.md](docs/GPU_TRAINING.md)** - GPU-accelerated training guide
 
 **Separated architecture benefits:**
+
 - Clean git repository (no large data files)
 - Flexible storage options (different drives)
 - Easy backup strategies
@@ -360,6 +301,7 @@ D:\NBA_Data\                # Data (persistent)
 - Improved portability
 
 **Cloud training options:**
+
 - Google Colab Free: $0/month, 2 cores, 12GB RAM, ~21 min/slate
 - Google Colab Pro: $10/month, 4 cores, 25GB RAM, ~10.4 min/slate (recommended)
 - Google Colab Pro+: $50/month, 8 cores, 50GB RAM, ~5.2 min/slate
@@ -409,6 +351,7 @@ pytest tests/data/ -v
 ### Daily DFS Workflow
 
 **Step 1: Generate Predictions**
+
 ```bash
 # Basic prediction for a slate
 python scripts/predict_slate.py --date 20250210
@@ -421,6 +364,7 @@ python scripts/predict_slate.py --date 20250210 --features default_features --mo
 ```
 
 **Step 2: Generate Lineups**
+
 ```bash
 # Single lineup (cash game)
 python scripts/generate_lineups.py --predictions predictions.csv --num-lineups 1
@@ -430,6 +374,7 @@ python scripts/generate_lineups.py --predictions predictions.csv --num-lineups 2
 ```
 
 **Step 3: Upload to DraftKings**
+
 - Lineups exported to CSV in DraftKings format
 - Ready for direct upload to contests
 
@@ -459,6 +404,7 @@ python -m src.evaluation.backtest_report \
 ```
 
 **What it does:**
+
 - Loops through each slate date in the range
 - Generates predictions and lineups for each day
 - Scores lineups against actual results
@@ -468,11 +414,13 @@ python -m src.evaluation.backtest_report \
 ### Development Notebooks
 
 **Phase 1: Single Player Validation** (`notebooks/01_single_day_foundation.ipynb`)
+
 - Validates data loading, feature engineering, model training on single player
 - Demonstrates temporal validation and no-lookahead bias
 - MAPE calculation and feature importance analysis
 
 **Phase 2: Full Slate Prediction** (`notebooks/02_full_slate_prediction.ipynb`)
+
 - Scales to all players on a slate (241 players)
 - Per-player model training with XGBoost
 - Position and salary tier performance analysis
@@ -480,12 +428,14 @@ python -m src.evaluation.backtest_report \
 - Visualization: scatter plots, heatmaps, error distributions
 
 **Legacy Notebooks** (moved to `notebooks/deprecated/`)
+
 - Old backtesting execution notebooks
 - Replaced by modular scripts workflow
 
 ## API Rate Limits
 
 Tank01 RapidAPI limits:
+
 - 1000 requests/month (free tier)
 - Client tracks usage via request_count
 - Estimate: 1 request per date + 1 per game (11 games/day average = 12 requests/day)
@@ -578,12 +528,14 @@ Edit script to configure date range before running.
 ### Architecture
 
 **BacktestRunner (Background Worker)**
+
 - Executes WalkForwardBacktest in daemon thread
 - Thread-safe queues (log_queue, result_queue) for non-blocking streaming
 - Captures stdout/stderr and logging handlers
 - Graceful error handling with optional error message
 
 **Session State Management**
+
 - backtest_config: Current configuration dictionary
 - logs: Streamed log entries with timestamps
 - daily_results: Per-slate results as they complete
@@ -592,6 +544,7 @@ Edit script to configure date range before running.
 - training_sample: Cached feature matrix preview
 
 **Event Loop**
+
 - Polls runner queues every second (non-blocking get_nowait())
 - Routes events to appropriate state containers
 - Auto-reruns UI while backtest is running
@@ -635,15 +588,15 @@ Rebuilds feature matrix using same pipeline as backtest training phase.
 
 ### Differences from Script-Based Backtesting
 
-| Aspect | Script (CLI) | Streamlit (UI) |
-|--------|-------------|----------------|
-| Configuration | Command-line arguments | Interactive form controls |
-| Execution | Synchronous (blocks terminal) | Asynchronous (background daemon) |
-| Progress Monitoring | Console output | Real-time streamed panel |
-| Feature Inspection | Separate notebook/script | Integrated "Training Input Sample" tab |
-| Experimentation | Edit code/configs, re-run | Change UI values, click Run |
-| Error Handling | Exception traceback in terminal | Error message in UI panel |
-| Results Access | File system only | Streamed to UI + file system |
+| Aspect              | Script (CLI)                    | Streamlit (UI)                         |
+| ------------------- | ------------------------------- | -------------------------------------- |
+| Configuration       | Command-line arguments          | Interactive form controls              |
+| Execution           | Synchronous (blocks terminal)   | Asynchronous (background daemon)       |
+| Progress Monitoring | Console output                  | Real-time streamed panel               |
+| Feature Inspection  | Separate notebook/script        | Integrated "Training Input Sample" tab |
+| Experimentation     | Edit code/configs, re-run       | Change UI values, click Run            |
+| Error Handling      | Exception traceback in terminal | Error message in UI panel              |
+| Results Access      | File system only                | Streamed to UI + file system           |
 
 ### Requirements
 
@@ -654,50 +607,59 @@ Rebuilds feature matrix using same pipeline as backtest training phase.
 ### Troubleshooting
 
 **Backtest never starts:**
+
 - Verify parquet data files exist in data directory
 - Check data directory contains files for training date range
 - Ensure feature config file exists (config/features/default_features.yaml)
 
 **Empty training sample:**
+
 - Confirm training date range has available player game logs
 - Verify feature pipeline completes without errors
 - Check minutes_threshold isn't filtering all players
 
-
 ## New Features (2025-10-26)
 
 ### Advanced Efficiency Metrics
+
 Three new transformer classes for NBA advanced metrics:
 
 **EfficiencyMetricsTransformer:**
+
 - eFG% (Effective Field Goal %)
 - TS% (True Shooting %)
 - FTR (Free Throw Rate)
 - TotalReb (Offensive + Defensive rebounds)
 
 **PlaymakingMetricsTransformer:**
+
 - AST_TO_ratio (Assists per turnover)
 
 **ImpactMetricsTransformer:**
+
 - GameScore (Hollinger's composite metric)
 
 These metrics are included in rolling stats and EWMA calculations, creating temporal patterns for improved predictions.
 
 ### Ensemble Models
+
 **Stacking:** Combines XGBoost + Random Forest base models with XGBoost meta-learner (`config/models/stacked_xgb_rf.yaml`)
 
 **Bagging:** Bootstrap aggregating with 10 XGBoost models for variance reduction (`config/models/bagged_xgboost.yaml`)
 
 ### Production Scripts
+
 **predict_slate.py:** Modular slate prediction with swappable features/models
 **generate_lineups.py:** Lineup optimization via pydfs-lineup-optimizer
 
 ### Position Analysis
+
 Cross-tabulation of MAPE by salary tier × position for granular performance insights
 
 ## Roadmap
 
 ### Completed (2025-10-26)
+
 ✓ Advanced efficiency metrics (eFG%, TS%, GameScore, etc.)
 ✓ Ensemble models (Stacking, Bagging)
 ✓ Position-based performance analysis
@@ -706,10 +668,12 @@ Cross-tabulation of MAPE by salary tier × position for granular performance ins
 ✓ **Walk-forward backtest simulation:** Multi-day framework that iterates through historical slates, simulating the daily workflow (predict → optimize → score) to validate production pipeline performance
 
 ### In Progress
+
 - Contextual features (home/away, rest days, back-to-back games)
 - Shooting guard (SG) position performance improvement
 
 ### Planned
+
 - Opponent defensive rating features
 - Minutes projection model
 - Injury/inactive status integration
