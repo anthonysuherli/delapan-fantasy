@@ -56,6 +56,14 @@ registry = ModelRegistry()
 
 from .xgboost_model import XGBoostModel
 from .random_forest_model import RandomForestModel
+from .stacking_model import StackingModel
+from .bagging_model import BaggingModel
+from .minutes_model import MinutesProjectionModel
+from .quantile_model import QuantileRegressionModel
 
 registry.register('xgboost', XGBoostModel)
 registry.register('random_forest', RandomForestModel)
+registry.register('stacking', StackingModel)
+registry.register('bagging', BaggingModel)
+registry.register('minutes', MinutesProjectionModel)
+registry.register('quantile', QuantileRegressionModel)

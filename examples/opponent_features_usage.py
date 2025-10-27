@@ -18,7 +18,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from src.features import registry
 from src.features.transformers.opponent_stats import OpponentStatsTransformer
-from src.data.storage.sqlite_storage import SQLiteStorage
 from src.data.loaders.historical_loader import HistoricalDataLoader
 import pandas as pd
 
@@ -31,8 +30,7 @@ def demo_opponent_features():
     print("="*80)
     
     # 1. Initialize data loader
-    storage = SQLiteStorage(db_path="nba_dfs.db")
-    loader = HistoricalDataLoader(storage)
+    loader = HistoricalDataLoader(data_dir="data")
     
     print("Loading sample data...")
     

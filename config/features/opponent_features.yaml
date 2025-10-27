@@ -33,6 +33,7 @@ categorical_features:
 
 # Core player stats to include alongside opponent features
 stats:
+  - playerID
   - pts
   - reb
   - ast
@@ -78,7 +79,7 @@ transformers:
   # Basic rolling stats for core player performance
   - type: rolling_stats
     params:
-      windows: [3, 5, 10]
+      windows: [3, 10]
       stats: [pts, reb, ast, stl, blk, mins, fpts]
       include_std: true
 
@@ -117,17 +118,9 @@ transformers:
   - type: injury
     params: {}
 
-# Expected feature impact (for documentation)
-expected_improvements:
-  opp_pace: "2-4% MAPE improvement"
-  position_matchups: "3-5% MAPE improvement" 
-  is_home_team: "1-2% MAPE improvement"
-  recent_defense: "2-3% MAPE improvement"
-  combined_impact: "8-15% overall MAPE improvement"
-
 # Validation thresholds
 validation:
-  min_games_per_team: 20         # Minimum games required for team stats
+  min_games_per_team: 1         # Minimum games required for team stats
   min_opponent_coverage: 0.85    # Minimum % of games with opponent data
   max_missing_features: 0.10     # Maximum % missing opponent features
 

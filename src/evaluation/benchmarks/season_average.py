@@ -29,35 +29,36 @@ class SeasonAverageBenchmark:
     def fit(self, historical_data: pd.DataFrame) -> 'SeasonAverageBenchmark':
         """
         Calculate player season averages from historical data.
-        
+
         Args:
             historical_data: DataFrame with 'playerID' and 'fpts' columns
-            
+
         Returns:
             self for method chaining
         """
         if 'playerID' not in historical_data.columns or 'fpts' not in historical_data.columns:
             raise ValueError("historical_data must contain 'playerID' and 'fpts' columns")
-        
+
         # Calculate averages per player
         player_stats = historical_data.groupby('playerID').agg({
             'fpts': ['mean', 'count']
         })
-        
+
         # Flatten column names
         player_stats.columns = ['avg_fpts', 'game_count']
         player_stats = player_stats.reset_index()
-        
+
         # Filter by minimum games
         qualified = player_stats[player_stats['game_count'] >= self.min_games]
-        
+
         # Store averages
         self.player_averages = qualified.set_index('playerID')['avg_fpts'].to_dict()
         self.player_game_counts = qualified.set_index('playerID')['game_count'].to_dict()
-        
+
+        unique_players = historical_data['playerID'].nunique()
         logger.info(f"Fitted benchmark for {len(self.player_averages)} players "
-                   f"(min_games={self.min_games})")
-        
+                   f"(min_games={self.min_games}, total_unique_players={unique_players})")
+
         return self
     
     def predict(self, slate_data: pd.DataFrame) -> pd.DataFrame:
@@ -71,7 +72,7 @@ class SeasonAverageBenchmark:
             DataFrame with added 'benchmark_pred' column
         """
         result = slate_data.copy()
-        result['benchmark_pred'] = result['playerID'].map(self.player_averages).fillna(0)
+        result['benchmark_pred'] = result['playerID'].map(self.player_averages).fillna(0).infer_objects(copy=False)
         
         coverage = (result['benchmark_pred'] > 0).sum()
         logger.info(f"Benchmark coverage: {coverage}/{len(result)} players "
@@ -165,9 +166,11 @@ Improvement (positive = model better):
         Returns:
             DataFrame with per-tier comparison metrics
         """
-        from src.evaluation.metrics.accuracy import MAPEMetric, RMSEMetric, MAEMetric
+        from src.evaluation.metrics.accuracy import MAPEMetric, RMSEMetric, MAEMetric, CappedMAPEMetric
         
+        # Use capped MAPE to avoid division-by-zero/near-zero inflation and also filter to reasonable actuals
         mape_metric = MAPEMetric()
+        cmape_metric = CappedMAPEMetric(cap=8.0)
         rmse_metric = RMSEMetric()
         mae_metric = MAEMetric()
         
@@ -178,6 +181,9 @@ Improvement (positive = model better):
             bins=salary_tiers,
             labels=['Low', 'Mid', 'High', 'Elite'][:len(salary_tiers)-1]
         )
+        
+        # Drop rows with missing predictions
+        results = results[(results['model_pred'].notna()) & (results['benchmark_pred'].notna())]
         
         tier_results = []
         
@@ -190,28 +196,40 @@ Improvement (positive = model better):
             if len(tier_data) == 0:
                 continue
             
-            # Calculate metrics for both
-            model_mape = mape_metric.calculate(tier_data['actual'], tier_data['model_pred'])
-            benchmark_mape = mape_metric.calculate(tier_data['actual'], tier_data['benchmark_pred'])
+            # Filter out very low actuals to avoid MAPE explosion
+            tier_filtered = tier_data[tier_data['actual'] >= 5.0]
             
-            model_rmse = rmse_metric.calculate(tier_data['actual'], tier_data['model_pred'])
-            benchmark_rmse = rmse_metric.calculate(tier_data['actual'], tier_data['benchmark_pred'])
-            
-            model_mae = mae_metric.calculate(tier_data['actual'], tier_data['model_pred'])
-            benchmark_mae = mae_metric.calculate(tier_data['actual'], tier_data['benchmark_pred'])
+            if len(tier_filtered) == 0:
+                model_mape = np.nan
+                benchmark_mape = np.nan
+                model_rmse = np.nan
+                benchmark_rmse = np.nan
+                model_mae = np.nan
+                benchmark_mae = np.nan
+                count_used = 0
+            else:
+                # Report both standard MAPE (filtered) and rely on filtered rows; optionally could use cMAPE instead
+                model_mape = mape_metric.calculate(tier_filtered['actual'], tier_filtered['model_pred'])
+                benchmark_mape = mape_metric.calculate(tier_filtered['actual'], tier_filtered['benchmark_pred'])
+                model_rmse = rmse_metric.calculate(tier_filtered['actual'], tier_filtered['model_pred'])
+                benchmark_rmse = rmse_metric.calculate(tier_filtered['actual'], tier_filtered['benchmark_pred'])
+                model_mae = mae_metric.calculate(tier_filtered['actual'], tier_filtered['model_pred'])
+                benchmark_mae = mae_metric.calculate(tier_filtered['actual'], tier_filtered['benchmark_pred'])
+                count_used = len(tier_filtered)
             
             tier_results.append({
                 'salary_tier': tier,
-                'count': len(tier_data),
+                'count': int(len(tier_data)),
+                'count_used_for_mape': int(count_used),
                 'model_mape': model_mape,
                 'benchmark_mape': benchmark_mape,
-                'mape_improvement': benchmark_mape - model_mape,
+                'mape_improvement': (benchmark_mape - model_mape) if (pd.notna(model_mape) and pd.notna(benchmark_mape)) else np.nan,
                 'model_rmse': model_rmse,
                 'benchmark_rmse': benchmark_rmse,
-                'rmse_improvement': benchmark_rmse - model_rmse,
+                'rmse_improvement': (benchmark_rmse - model_rmse) if (pd.notna(model_rmse) and pd.notna(benchmark_rmse)) else np.nan,
                 'model_mae': model_mae,
                 'benchmark_mae': benchmark_mae,
-                'mae_improvement': benchmark_mae - model_mae
+                'mae_improvement': (benchmark_mae - model_mae) if (pd.notna(model_mae) and pd.notna(benchmark_mae)) else np.nan
             })
         
         return pd.DataFrame(tier_results)

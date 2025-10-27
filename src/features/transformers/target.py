@@ -5,7 +5,7 @@ from ..base import FeatureTransformer
 class TargetTransformer(FeatureTransformer):
     """Create target variable for prediction"""
 
-    def __init__(self, target_col: str = 'fpts', shift_periods: int = -1):
+    def __init__(self, target_col: str = 'fantasy_points', shift_periods: int = -1):
         """
         Initialize target transformer.
 

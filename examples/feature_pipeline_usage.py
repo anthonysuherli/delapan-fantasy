@@ -19,7 +19,6 @@ from src.features.transformers import (
     EWMATransformer,
     TargetTransformer
 )
-from src.data.storage.sqlite_storage import SQLiteStorage
 from src.data.loaders.historical_loader import HistoricalDataLoader
 
 
@@ -61,14 +60,12 @@ def main():
 
     TARGET_DATE = '20250210'
     NUM_SEASONS = 2
-    DB_PATH = repo_root / 'nba_dfs.db'
 
     print('=' * 60)
     print('Feature Pipeline Example')
     print('=' * 60)
 
-    storage = SQLiteStorage(str(DB_PATH))
-    loader = HistoricalDataLoader(storage)
+    loader = HistoricalDataLoader(data_dir="data")
 
     print(f'\n1. Loading historical data (target date: {TARGET_DATE})')
     historical_data = loader.load_historical_player_logs(

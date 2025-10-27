@@ -5,6 +5,8 @@ Loads feature configuration from YAML files and builds feature pipelines.
 """
 
 import yaml
+import tempfile
+import os
 from pathlib import Path
 from typing import Dict, Any, List, Tuple
 import logging
@@ -122,6 +124,10 @@ class FeatureConfig:
         from src.features.transformers.target import TargetTransformer
         from src.features.transformers.injury import InjuryTransformer
         from src.features.transformers.opponent_stats import OpponentStatsTransformer
+        from src.features.transformers.efficiency_metrics import EfficiencyMetricsTransformer
+        from src.features.transformers.playmaking_metrics import PlaymakingMetricsTransformer
+        from src.features.transformers.impact_metrics import ImpactMetricsTransformer
+        from src.features.transformers.contextual import ContextualFeaturesTransformer
 
         pipeline = feature_pipeline_class()
 
@@ -171,7 +177,7 @@ class FeatureConfig:
                 features = params.get('features', None)
                 lookback_days = params.get('lookback_days', 365)
                 recent_games_window = params.get('recent_games_window', 10)
-                
+
                 transformer = OpponentStatsTransformer(
                     features=features,
                     lookback_days=lookback_days,
@@ -180,6 +186,27 @@ class FeatureConfig:
                 pipeline.add(transformer)
                 feature_list = features if features else transformer.default_features
                 logger.info(f"Added OpponentStatsTransformer: {len(feature_list)} features, lookback={lookback_days}d")
+
+            elif transformer_type == 'efficiency_metrics':
+                transformer = EfficiencyMetricsTransformer()
+                pipeline.add(transformer)
+                logger.info(f"Added EfficiencyMetricsTransformer: eFG%, TS%, FTR, TotalReb")
+
+            elif transformer_type == 'playmaking_metrics':
+                transformer = PlaymakingMetricsTransformer()
+                pipeline.add(transformer)
+                logger.info(f"Added PlaymakingMetricsTransformer: AST/TO ratio")
+
+            elif transformer_type == 'impact_metrics':
+                transformer = ImpactMetricsTransformer()
+                pipeline.add(transformer)
+                logger.info(f"Added ImpactMetricsTransformer: GameScore")
+
+            elif transformer_type == 'contextual':
+                max_rest_days = params.get('max_rest_days', 7)
+                transformer = ContextualFeaturesTransformer(max_rest_days=max_rest_days)
+                pipeline.add(transformer)
+                logger.info(f"Added ContextualFeaturesTransformer: home/away, rest days, back-to-back")
 
             else:
                 logger.warning(f"Unknown transformer type: {transformer_type}")
@@ -294,18 +321,14 @@ def _merge_feature_configs(config_names: List[str], config_dir: Path) -> Feature
     merged_data = _create_merged_config_data(configs)
     
     # Create temporary merged config file
-    import tempfile
-    import yaml
-    
     with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
         yaml.dump(merged_data, f, default_flow_style=False)
         temp_path = f.name
-    
+
     # Create FeatureConfig from merged data
     merged_config = FeatureConfig(temp_path)
-    
+
     # Clean up temp file
-    import os
     os.unlink(temp_path)
     
     return merged_config

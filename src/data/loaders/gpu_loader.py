@@ -168,7 +168,7 @@ class GPUAcceleratedLoader:
             if result[col].dtype == object:
                 result[col] = result[col].astype('float32')
 
-        result = result.fillna(0)
+        result = result.fillna(0).infer_objects(copy=False)
 
         return result
 

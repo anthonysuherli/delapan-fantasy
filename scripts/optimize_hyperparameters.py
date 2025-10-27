@@ -8,7 +8,7 @@ parameters to a YAML configuration file for use in backtesting.
 Usage:
     python scripts/optimize_hyperparameters.py --output config/models/optimized_xgboost.yaml
     python scripts/optimize_hyperparameters.py --trials 100 --timeout 3600 --sample-size 10000
-    python scripts/optimize_hyperparameters.py --db-path nba_dfs.db --data-dir /path/to/data
+    python scripts/optimize_hyperparameters.py --data-dir /path/to/data
 """
 
 import argparse
@@ -28,7 +28,6 @@ from sklearn.model_selection import KFold
 from sklearn.metrics import mean_absolute_percentage_error
 import xgboost as xgb
 
-from src.data.storage.sqlite_storage import SQLiteStorage
 from src.data.loaders.historical_loader import HistoricalDataLoader
 from src.utils.feature_config import load_feature_config
 from src.features.pipeline import FeaturePipeline
@@ -41,15 +40,9 @@ def parse_args():
     )
 
     parser.add_argument(
-        "--db-path",
-        default="nba_dfs.db",
-        help="Path to SQLite database (default: nba_dfs.db)"
-    )
-
-    parser.add_argument(
         "--data-dir",
-        default=None,
-        help="Data directory for separated architecture (optional)"
+        default="data",
+        help="Base data directory containing parquet files (default: data)"
     )
 
     parser.add_argument(
@@ -219,18 +212,7 @@ def main():
     print("="*80)
     print()
 
-    if args.data_dir:
-        data_path = Path(args.data_dir)
-        db_path_obj = Path(args.db_path)
-        if not db_path_obj.is_absolute():
-            db_path = str(data_path / args.db_path)
-        else:
-            db_path = args.db_path
-    else:
-        db_path = args.db_path
-
-    storage = SQLiteStorage(db_path)
-    loader = HistoricalDataLoader(storage)
+    loader = HistoricalDataLoader(data_dir=args.data_dir)
 
     print("Loading training data...")
     training_data = loader.load_historical_player_logs(
@@ -263,7 +245,7 @@ def main():
     ]
     feature_cols = [col for col in train_features.columns if col not in metadata_cols]
 
-    X_full = train_features[feature_cols].fillna(0)
+    X_full = train_features[feature_cols].fillna(0).infer_objects(copy=False)
     y_full = train_features['target']
 
     if len(X_full) > args.sample_size:

@@ -1,0 +1,60 @@
+name: "Contextual Feature Set"
+description: "Base features plus contextual game features (home/away, rest days, back-to-back)"
+version: "1.0.0"
+
+rolling_windows: [3, 5, 10]
+ewma_span: 5
+
+metadata_cols:
+  - playerID
+  - longName
+  - team
+  - teamAbv
+  - pos
+  - gameDate
+  - gameID
+  - fantasyPoints
+  - target
+
+stats:
+  - pts
+  - reb
+  - ast
+  - stl
+  - blk
+  - mins
+
+transformers:
+  # First add contextual features (before rolling stats so they can be included in rolling windows)
+  - type: contextual
+    params:
+      max_rest_days: 7
+
+  # Efficiency metrics
+  - type: efficiency_metrics
+    params: {}
+
+  # Playmaking metrics
+  - type: playmaking_metrics
+    params: {}
+
+  # Impact metrics
+  - type: impact_metrics
+    params: {}
+
+  # Rolling statistics
+  - type: rolling_stats
+    params:
+      windows: [3, 5, 10]
+      include_std: true
+
+  # EWMA
+  - type: ewma
+    params:
+      span: 5
+
+  # Target (must be last)
+  - type: target
+    params:
+      target_col: fantasyPoints
+      shift_periods: -1

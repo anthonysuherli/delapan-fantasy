@@ -1,6 +1,6 @@
 name: "Base Feature Set"
-description: "Minimal feature set with core stats only for fast experimentation"
-version: "2.0.0"
+description: "Minimal feature set with core stats and advanced efficiency metrics"
+version: "3.0.0"
 
 rolling_windows: [3, 5, 10]
 ewma_span: 5
@@ -14,6 +14,15 @@ stats:
   - mins
 
 transformers:
+  - type: efficiency_metrics
+    params: {}
+
+  - type: playmaking_metrics
+    params: {}
+
+  - type: impact_metrics
+    params: {}
+
   - type: rolling_stats
     params:
       windows: [3, 5, 10]
@@ -25,8 +34,5 @@ transformers:
 
   - type: target
     params:
-      target_col: fpts
+      target_col: fantasyPoints
       shift_periods: -1
-
-  - type: injury
-    params: {}

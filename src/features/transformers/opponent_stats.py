@@ -127,7 +127,7 @@ class OpponentStatsTransformer(FeatureTransformer):
                 # Handle string concatenation issues by taking first value
                 if df[col].dtype == 'object':
                     df[col] = df[col].astype(str).str.split('.').str[0]
-                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).infer_objects(copy=False)
         
         # Calculate team statistics by team and date
         team_stats = {}

@@ -18,6 +18,59 @@ Five-layer structure (All layers implemented):
 
 Registry pattern across layers for component hot-swapping. Configuration-driven design for reproducibility.
 
+## Modular Design
+
+All components use **registry patterns** for hot-swapping:
+
+### Feature Sets (Config-Driven)
+- `base_features.yaml`: 6 core stats + efficiency metrics (eFG%, TS%, FTR, AST/TO, GameScore)
+- `default_features.yaml`: 21 statistics, 147 features with rolling windows
+- Create custom feature sets in `config/features/` - automatically loaded
+
+### Models (Registry Pattern)
+Registered models in `src/models/registry.py`:
+- `xgboost`: Gradient boosting (primary model)
+- `random_forest`: Random forest baseline
+- `stacking`: Multi-model ensemble with meta-learner
+- `bagging`: Bootstrap aggregating for variance reduction
+- `minutes`: Minutes projection model (filters low-minute players)
+- `quantile`: Quantile regression for floor/median/ceiling predictions
+
+**Adding new models:**
+```python
+# 1. Create model class extending BaseModel
+class MyModel(BaseModel):
+    def train(self, X, y): ...
+    def predict(self, X): ...
+
+# 2. Register in src/models/registry.py
+from .my_model import MyModel
+registry.register('my_model', MyModel)
+
+# 3. Use via CLI
+python scripts/predict_slate.py --model my_model_config
+```
+
+### Optimizers (Registry Pattern)
+Registered in `src/optimization/registry.py`:
+- `linear_program`: Integer linear programming via PuLP (cash game optimization)
+- `gpp_genetic`: Genetic algorithm for GPP tournaments (ceiling optimization with ownership)
+- `lineup_generator`: pydfs-lineup-optimizer with DraftKings constraints
+
+### Ensemble Models
+
+**Stacking** (`config/models/stacked_xgb_rf.yaml`):
+- Combines XGBoost + Random Forest base models
+- XGBoost meta-learner on base predictions
+- 5-fold CV for out-of-fold training
+- Usage: `--model stacked_xgb_rf`
+
+**Bagging** (`config/models/bagged_xgboost.yaml`):
+- 10 XGBoost models on bootstrap samples
+- Variance reduction through averaging
+- 80% data sampling per model
+- Usage: `--model bagged_xgboost`
+
 ## Development Commands
 
 ### Installation
@@ -38,38 +91,112 @@ python scripts/collect_games.py --start-date 20241201 --end-date 20241231
 python scripts/collect_dfs_salaries.py --start-date 20241201 --end-date 20241231
 ```
 
-### Backtesting
+### Slate Prediction (Daily Workflow)
 
-Three execution options available:
-
-**Command-line (CPU):**
+**Predict full slate with analysis:**
 ```bash
-python scripts/run_backtest.py --test-start 20250205 --test-end 20250206
-python scripts/run_backtest.py --test-start 20250201 --test-end 20250228 --per-player
+python scripts/predict_slate.py --date 20250210 --analyze
 ```
 
-**Command-line (GPU-accelerated):**
+**Swap feature sets:**
 ```bash
-python scripts/run_backtest_gpu.py --test-start 20250205 --test-end 20250206 \
-  --model-config config/models/xgboost_a100.yaml --per-player --gpu-id 0
+python scripts/predict_slate.py --date 20250210 --features default_features  # 147 features
+python scripts/predict_slate.py --date 20250210 --features base_features     # Minimal set
 ```
 
-**Interactive Panel UI:**
+**Swap model types:**
 ```bash
-panel serve src/interface/panel_backtest_app.py --show
+python scripts/predict_slate.py --date 20250210 --model xgboost_default
+python scripts/predict_slate.py --date 20250210 --model stacked_xgb_rf       # Ensemble
+python scripts/predict_slate.py --date 20250210 --model bagged_xgboost       # Bagging
 ```
 
-**Interactive Streamlit UI:**
+### Lineup Generation
+
 ```bash
-streamlit run src/interface/backtest_app.py
+# Generate from predictions
+python scripts/generate_lineups.py --predictions predictions.csv --num-lineups 20
+
+# Different strategies
+python scripts/generate_lineups.py --predictions predictions.csv --strategy conservative
+python scripts/generate_lineups.py --predictions predictions.csv --strategy aggressive
+```
+
+### Daily Workflow (Production)
+
+**Step 1: Generate predictions for slate**
+```bash
+python scripts/predict_slate.py --date 20250210 --analyze
+python scripts/predict_slate.py --date 20250210 --features default_features --model stacked_xgb_rf
+```
+
+**Step 2: Generate optimal lineups**
+```bash
+python scripts/generate_lineups.py --predictions predictions.csv --num-lineups 20
+python scripts/generate_lineups.py --predictions predictions.csv --strategy aggressive
+```
+
+### GPP Tournament Workflow (Advanced)
+
+**Step 1: Generate predictions with variance estimates (quantile regression)**
+```bash
+python scripts/predict_slate.py --date 20250210 --use-quantiles --features full_features --analyze
+```
+
+**Step 2: Generate tournament lineups with GPP genetic optimizer**
+```bash
+# Basic GPP lineups (uses salary-based ownership estimates)
+python scripts/generate_lineups.py --predictions predictions.csv --use-gpp-genetic --num-lineups 20
+
+# Advanced: Custom ownership projections
+python scripts/generate_lineups.py --predictions predictions.csv \
+  --use-gpp-genetic \
+  --ownership-file ownership.csv \
+  --num-lineups 20 \
+  --ownership-weight 0.4 \
+  --population-size 150 \
+  --generations 100
+```
+
+**Parameters:**
+- `--use-quantiles`: Use quantile regression for ceiling/floor predictions
+- `--use-gpp-genetic`: Use genetic algorithm optimizer for tournaments
+- `--ownership-file`: CSV with playerID and ownership columns (optional)
+- `--ownership-weight`: Penalty for high ownership (0.0-1.0, default 0.3)
+- `--population-size`: GA population size (default 100)
+- `--generations`: Number of GA iterations (default 50)
+
+### Walk-Forward Backtest Simulation
+
+**Run simulation across historical dates:**
+```bash
+python scripts/run_walk_forward_backtest.py --start-date 20250201 --end-date 20250210
+python scripts/run_walk_forward_backtest.py --start-date 20250201 --end-date 20250210 --num-lineups 20
+```
+
+**Customize configuration:**
+```bash
+python scripts/run_walk_forward_backtest.py --start-date 20250201 --end-date 20250210 \
+  --features default_features \
+  --model stacked_xgb_rf \
+  --num-lineups 20 \
+  --strategy aggressive \
+  --save-predictions \
+  --save-lineups
+```
+
+**Generate report from results:**
+```bash
+python -m src.evaluation.backtest_report --results data/backtest_results/simulation_results_TIMESTAMP.json
+```
+
+**Legacy backtesting (deprecated):**
+```bash
+# Old scripts moved to scripts/deprecated/
+# Use notebooks 01_single_day_foundation.ipynb and 02_full_slate_prediction.ipynb for validation
 ```
 
 Requires TANK01_API_KEY in .env file. RapidAPI key from Tank01 Fantasy Stats API.
-
-See [docs/SCRIPTS_GUIDE.md](docs/SCRIPTS_GUIDE.md) for complete scripts documentation.
-See [scripts/README.md](scripts/README.md) for additional details.
-See [docs/GPU_TRAINING.md](docs/GPU_TRAINING.md) for GPU setup and configuration.
-See [docs/PANEL_INTERFACE.md](docs/PANEL_INTERFACE.md) for Panel UI guide.
 
 ## Key Modules
 
@@ -129,9 +256,15 @@ data/
 ### Data Loaders: src/data/loaders/
 
 HistoricalDataLoader (src/data/loaders/historical_loader.py):
+- Uses DuckDB for efficient in-memory querying of parquet files
+- Reads directly from date-partitioned parquet storage with hive partitioning
 - load_slate_data(date): Load all data for a specific slate
 - load_historical_data(start_date, end_date): Load data across date range
-- load_historical_player_logs(end_date, lookback_days): Load player logs with temporal validation
+- load_historical_player_logs(start_date, end_date, num_seasons, player_ids): Load player logs with temporal validation
+  - start_date: Optional training start date (overrides num_seasons)
+  - end_date: Required exclusive end date
+  - num_seasons: Number of seasons to load (default 2: current + previous)
+  - player_ids: Optional list of player IDs to filter (optimizes memory usage)
 - load_slate_dates(start_date, end_date): Get dates with games in range
 - Prevents lookahead bias in training data
 
@@ -182,9 +315,40 @@ EWMATransformer (src/features/transformers/ewma.py):
 - Default span: 5 games
 - Applied to all 21 statistics
 
+EfficiencyMetricsTransformer (src/features/transformers/efficiency_metrics.py):
+- eFG%: Effective Field Goal % (accounts for 3PT value)
+- TS%: True Shooting % (accounts for FTs and 3PT)
+- FTR: Free Throw Rate (FT attempts relative to FGA)
+- TotalReb: Total rebounds (OffReb + DefReb)
+
+PlaymakingMetricsTransformer (src/features/transformers/playmaking_metrics.py):
+- AST_TO_ratio: Assists per turnover
+
+ImpactMetricsTransformer (src/features/transformers/impact_metrics.py):
+- GameScore: Hollinger's composite performance metric
+
+ContextualFeaturesTransformer (src/features/transformers/contextual.py):
+- home_game: 1 if playing at home, 0 if away (parsed from gameID)
+- rest_days: Days since last game (capped at 7)
+- back_to_back: 1 if playing on consecutive days
+- days_off_3plus: 1 if 3+ days rest
+- Config: config/features/contextual_features.yaml
+
+OpponentStatsTransformer (src/features/transformers/opponent_stats.py):
+- opp_pace: Opponent pace (possessions per game)
+- opp_def_rating_last_10: Opponent defensive rating (recent 10 games)
+- Position-specific points allowed: pg/sg/sf/pf/c_fpts_allowed
+- is_home_team: Home court advantage indicator
+- opp_3pt_defense_rank, opp_rest_days, opp_foul_rate, opp_turnover_rate
+- Matchup-based features for opponent defensive strength
+
 FeatureConfig (src/utils/feature_config.py):
 - Load feature configurations from YAML files
-- Available configs: default_features.yaml (21 stats), base_features.yaml (6 stats)
+- Available configs:
+  - base_features.yaml: 6 core stats + efficiency metrics
+  - default_features.yaml: 21 statistics, 147 features with rolling windows
+  - contextual_features.yaml: Includes contextual transformers
+  - full_features.yaml: Complete feature set with all transformers
 - Build pipelines from configuration
 - Supports configuration versioning
 
@@ -209,6 +373,36 @@ RandomForestModel (src/models/random_forest_model.py):
 - Ensemble of decision trees
 - Baseline model for comparison
 
+BaggingModel (src/models/bagging_model.py):
+- Bootstrap aggregating for variance reduction
+- Trains multiple models on bootstrap samples
+- Averages predictions for improved stability
+- Config: config/models/bagged_xgboost.yaml
+
+StackingModel (src/models/stacking_model.py):
+- Multi-model ensemble with meta-learner
+- Trains base models (XGBoost + Random Forest)
+- Meta-learner combines base predictions
+- 5-fold CV for out-of-fold training
+- Config: config/models/stacked_xgb_rf.yaml
+
+MinutesProjectionModel (src/models/minutes_model.py):
+- Separate model for predicting player minutes
+- Filters low-minute players before fantasy point prediction
+- XGBoost regressor targeting minutes played
+- predict_with_threshold(): Returns predictions and mask for players above threshold
+- Config: config/models/minutes_projection.yaml
+- Min minutes threshold: 15 (configurable)
+
+QuantileRegressionModel (src/models/quantile_model.py):
+- Predicts floor (10th), median (50th), ceiling (90th) percentiles
+- Enables variance estimation and confidence intervals
+- Used for GPP tournament optimization (high-ceiling strategy)
+- predict_with_variance(): Returns floor/median/ceiling/variance/iqr/cv
+- Three separate XGBoost models (one per quantile)
+- Config: config/models/quantile_regression.yaml
+- Usage: `python scripts/predict_slate.py --date 20250210 --use-quantiles`
+
 ### Optimization: src/optimization/
 
 BaseOptimizer (src/optimization/base.py):
@@ -223,6 +417,20 @@ LinearProgramOptimizer (src/optimization/optimizers/linear_program.py):
 - Maximizes projected points subject to salary cap
 - salary_cap: Default $50,000 for DraftKings
 
+GPPGeneticOptimizer (src/optimization/optimizers/gpp_genetic.py):
+- Genetic algorithm optimizer for GPP tournaments
+- Optimizes for ceiling projections (90th percentile) instead of expected value
+- Ownership penalty to favor contrarian, low-ownership plays
+- Population-based evolution (selection, crossover, mutation)
+- Generates diverse, uncorrelated lineups for multi-entry tournaments
+- Parameters:
+  - population_size: Number of lineups per generation (default 100)
+  - generations: Number of evolutionary iterations (default 50)
+  - ownership_weight: Penalty for high ownership (default 0.3)
+  - diversity_weight: Bonus for lineup variance (default 0.2)
+- Usage: `python scripts/generate_lineups.py --predictions predictions.csv --use-gpp-genetic --num-lineups 20`
+- Requires ceiling projections from quantile regression model
+
 DraftKings constraints (src/optimization/constraints/draftkings.py):
 - Salary cap $50,000
 - Exactly 8 players
@@ -235,13 +443,30 @@ OptimizerRegistry (src/optimization/registry.py):
 
 ### Evaluation: src/evaluation/
 
-WalkForwardBacktest (src/walk_forward_backtest.py):
-- run(): Execute walk-forward backtest across date range
-- Automated model recalibration every N days
-- Per-player or per-slate model support
-- Benchmark comparison with statistical testing
-- Model and prediction persistence
+WalkForwardSimulation (src/evaluation/walk_forward_simulation.py):
+- run(): Execute walk-forward simulation across date range
+- Simulates production workflow: predict → optimize → score
+- Per-player model training for each slate
+- Lineup generation and scoring against actual results
+- Aggregates metrics across entire backtest period
+- Configurable features, models, and strategies
 - Returns aggregated results with daily breakdown
+- CLI: scripts/run_walk_forward_backtest.py
+
+BacktestReport (src/evaluation/backtest_report.py):
+- generate_summary(): Text summary of simulation results
+- plot_daily_performance(): Daily actual vs projected points
+- plot_score_distribution(): Histogram of lineup scores and errors
+- plot_error_vs_projected(): Bias analysis (error vs projection magnitude)
+- generate_full_report(): Complete report with all visualizations
+
+WalkForwardBacktest (DEPRECATED - src/evaluation/deprecated/backtest/walk_forward.py):
+- Legacy backtest framework moved to deprecated/
+- Use WalkForwardSimulation for new projects
+
+Trainers (src/evaluation/backtest/trainers/):
+- PerPlayerTrainer: Train individual models per player
+- PerSlateTrainer: Train single model for entire slate
 
 Validator (src/evaluation/backtest/validator.py):
 - validate(train_data, test_data): Single validation iteration
@@ -258,10 +483,29 @@ Metrics (src/evaluation/metrics/accuracy.py):
 - RMSEMetric: Root Mean Squared Error
 - MAEMetric: Mean Absolute Error
 - CorrelationMetric: Pearson correlation coefficient
+- CappedMAPEMetric: MAPE with outlier capping
+- SMAPEMetric: Symmetric MAPE
+- WMAPEMetric: Weighted MAPE
+
+Segmented Analysis (src/evaluation/metrics/segmentation.py):
+- analyze_by_salary(results_df): Performance metrics by salary tier ($3-5k, $5-7k, $7-9k, $9k+)
+- analyze_by_position(results_df): Performance metrics by position (PG, SG, SF, PF, C)
+- cross_analysis(results_df): MAPE cross-tabulation by salary × position
+- get_best_segments(results_df): Top/bottom performing salary-position combinations
+- summary_report(results_df): Text summary of segmented performance
+- Integrated into predict_slate.py via --analyze flag
 
 MetricRegistry (src/evaluation/metrics/registry.py):
 - register(name, metric_class): Register metric
 - create(name): Instantiate metric
+
+Deprecated (src/deprecated/ and src/evaluation/deprecated/):
+- walk_forward_backtest.py: Legacy backtest framework (backward compatibility shim)
+- src/evaluation/deprecated/backtest/: Old WalkForwardBacktest, PerPlayerTrainer, PerSlateTrainer
+- scripts/deprecated/: Legacy run_backtest.py and run_backtest_with_lineups.py
+- notebooks/deprecated/: Old backtest notebooks
+- src/interface/deprecated/: Legacy Panel UI
+- Use scripts/predict_slate.py + scripts/generate_lineups.py for production workflow
 
 ### Utilities: src/utils/
 
@@ -287,38 +531,29 @@ Paths (src/config/paths.py):
 
 ### Interfaces: src/interface/
 
-Panel-based UI (src/interface/panel_backtest_app.py):
-- Dark-themed browser interface with Hack monospace font
-- Interactive configuration sidebar with experiment presets
-- Real-time results streaming via Tabulator
-- Terminal-like log display with color-coded severity levels
-- Background execution with BacktestRunner (thread-safe queues)
-- Injury and salary filters for player filtering
-- Launch: panel serve src/interface/panel_backtest_app.py --show
-- Access: http://localhost:5006
-
-Streamlit-based UI (src/interface/backtest_app.py - deleted):
-- Previous web interface implementation
-- Replaced by Panel for improved performance and features
+Interfaces (DEPRECATED - moved to src/interface/deprecated/):
+- Legacy Panel-based UI in src/interface/deprecated/panel_backtest_app.py
+- Old Streamlit UI removed in previous cleanup
+- Current workflow: Command-line scripts (predict_slate.py, generate_lineups.py)
+- Notebook-based analysis: 01_single_day_foundation.ipynb, 02_full_slate_prediction.ipynb
 
 ## Implementation Status
 
 All five layers implemented with working end-to-end pipeline. Walk-forward backtesting framework operational with benchmark comparison.
 
 Current notebooks:
-- backtest_1d_by_player.ipynb: Per-player model training for single date
-- backtest_1d_by_slate.ipynb: Slate-level model baseline
-- backtest_season.ipynb: Season-long walk-forward validation using WalkForwardBacktest
-- benchmark_comparison.ipynb: Model vs benchmark statistical comparison
+- 01_single_day_foundation.ipynb: Phase 1 - Single player prediction validation
+- 02_full_slate_prediction.ipynb: Phase 2 - Full slate per-player model training with position/salary analysis
+- notebooks/deprecated/: Legacy backtesting notebooks (run_backtest.ipynb, evaluate_backtest.ipynb, colab_walk_forward_backtest.ipynb)
 
-Walk-forward backtesting features:
-- WalkForwardBacktest framework (src/walk_forward_backtest.py)
-- Automated model recalibration (default: 7 days)
-- SeasonAverageBenchmark baseline comparison
-- Statistical significance testing (paired t-test, Cohen's d)
-- Salary tier performance analysis
-- Model and prediction persistence with metadata
-- Training inputs saved for reproducibility
+Walk-forward backtesting:
+- DEPRECATED: Legacy WalkForwardBacktest framework in src/evaluation/deprecated/
+- IMPLEMENTED: New multi-day simulation framework (src/evaluation/walk_forward_simulation.py)
+  - Wraps predict_slate.py + generate_lineups.py in date loop
+  - Validates production workflow on historical data
+  - Tracks lineup performance vs actual results
+  - Generates comprehensive performance reports with visualizations
+  - Command: `python scripts/run_walk_forward_backtest.py --start-date YYYYMMDD --end-date YYYYMMDD`
 
 Performance benchmarks (2025-02-05):
 - Elite players ($8k+): 32.9% MAPE (near 30% target)
@@ -326,7 +561,22 @@ Performance benchmarks (2025-02-05):
 - Coverage: 96.4% of players with models
 - Issues: Low-output player MAPE inflation, missing contextual features
 
-Active development: Injury filtering, contextual features, multi-slate statistical validation
+Recent improvements (2025-10-26):
+- New efficiency metrics transformers: eFG%, TS%, FTR, GameScore, AST/TO ratio
+- Modular slate prediction workflow: predict_slate.py + generate_lineups.py
+- Position-based performance analysis with cross-tabulation
+- Deprecated legacy backtesting infrastructure (moved to src/deprecated/)
+- Cleaned codebase: Removed GPU optimizations, consolidated deprecated code
+- Production-ready scripts for daily DFS workflow
+- Walk-forward backtest simulation: End-to-end pipeline validation on historical data
+  - Iterates through historical slates sequentially
+  - Generates predictions → optimizes lineups → scores vs actuals per day
+  - Aggregates performance metrics across entire backtest period
+  - Comprehensive reports with visualizations (daily performance, error distribution, bias analysis)
+
+Active development:
+- Contextual features (home/away, rest days)
+- SG position performance improvement (currently 161.5% MAPE)
 
 ## Configuration
 
@@ -438,8 +688,7 @@ Storage flattens body to DataFrame for analysis.
 2. Collect DFS salaries:
    python scripts/collect_dfs_salaries.py --start-date YYYYMMDD --end-date YYYYMMDD
 3. Monitor API usage via client.get_remaining_requests()
-4. Verify data in ./data/inputs/ subdirectories
-5. Optional: Load to SQLite: python scripts/load_games_to_db.py
+4. Verify data in ./data/inputs/ subdirectories (stored as parquet files)
 
 ### Adding New Features
 
@@ -459,22 +708,22 @@ Storage flattens body to DataFrame for analysis.
 5. Write tests in tests/models/
 6. Run pytest
 
-### Running Backtests
+### Daily DFS Workflow
 
-Current notebooks:
-1. backtest_1d_by_player.ipynb: Single-day per-player model backtest
-2. backtest_1d_by_slate.ipynb: Single-day slate-level baseline
-3. backtest_season.ipynb: Season-long walk-forward validation
+Production workflow (command-line):
+1. Generate slate predictions: python scripts/predict_slate.py --date 20250210 --analyze
+2. Optimize lineups: python scripts/generate_lineups.py --predictions predictions.csv --num-lineups 20
+3. Upload lineups to DraftKings
 
-Workflow:
-1. Load historical data via HistoricalDataLoader (temporal validation)
-2. Load feature config: feature_config = load_feature_config('default_features')
-3. Build features: pipeline = feature_config.build_pipeline(FeaturePipeline)
-4. Train per-player XGBoost models (500+ models per slate)
-5. Generate projections
-6. Calculate metrics (MAPE, RMSE, MAE, Correlation)
-7. Analyze errors by salary tier
-8. Optional: Optimize lineups with LinearProgramOptimizer
+Development workflow (notebooks):
+1. Phase 1 validation: notebooks/01_single_day_foundation.ipynb (single player)
+2. Phase 2 validation: notebooks/02_full_slate_prediction.ipynb (full slate with position/salary analysis)
+3. Feature engineering and model tuning
+
+Legacy notebooks (deprecated):
+- notebooks/deprecated/run_backtest.ipynb: Old backtest execution
+- notebooks/deprecated/evaluate_backtest.ipynb: Old results analysis
+- notebooks/deprecated/colab_walk_forward_backtest.ipynb: Colab version
 
 ## Usage Examples
 
@@ -539,39 +788,58 @@ optimizer = LinearProgramOptimizer(
 lineups = optimizer.optimize(projections_df, num_lineups=1)
 ```
 
-### Walk-Forward Validation
+### Slate Prediction (Production Workflow)
 
 ```python
-from src.walk_forward_backtest import WalkForwardBacktest
+# Command-line usage (recommended)
+# python scripts/predict_slate.py --date 20250205 --analyze --output predictions.csv
 
-backtest = WalkForwardBacktest(
-    db_path='nba_dfs.db',
-    train_start='20241001',
-    train_end='20241130',
-    test_start='20241201',
-    test_end='20241215',
-    per_player_models=True,
-    model_type='xgboost',
-    feature_config='default_features',
-    recalibrate_days=7,
-    save_models=True,
-    save_predictions=True
+# Programmatic usage
+from src.data.loaders.historical_loader import HistoricalDataLoader
+from src.utils.feature_config import load_feature_config
+from src.features.pipeline import FeaturePipeline
+from src.models.registry import registry as model_registry
+
+loader = HistoricalDataLoader('data')
+feature_config = load_feature_config('base_features')
+pipeline = feature_config.build_pipeline(FeaturePipeline)
+
+# Load slate and historical data
+test_slate = loader.load_slate_data('20250205')
+historical_logs = loader.load_historical_player_logs(
+    end_date='20250205',
+    num_seasons=2,
+    player_ids=eligible_player_ids
 )
 
-results = backtest.run()
+# Train per-player models and generate predictions
+# See notebooks/02_full_slate_prediction.ipynb for complete example
 ```
+
+Note: Legacy WalkForwardBacktest framework moved to src/deprecated/ and src/evaluation/deprecated/
 
 ### Data Loading
 
 ```python
 from src.data.loaders.historical_loader import HistoricalDataLoader
-from src.data.storage.parquet_storage import ParquetStorage
 
-storage = ParquetStorage()
-loader = HistoricalDataLoader(storage)
+# Initialize loader with data directory containing parquet files
+loader = HistoricalDataLoader(data_dir='data')
 
 slate_data = loader.load_slate_data('20241215')
 historical_data = loader.load_historical_data('20241201', '20241231')
-player_logs = loader.load_historical_player_logs('20241215', lookback_days=365)
+
+# Load current season data
+player_logs = loader.load_historical_player_logs(
+    end_date='20241215',
+    num_seasons=1
+)
+
+# Load with player filtering (memory optimization)
+filtered_logs = loader.load_historical_player_logs(
+    end_date='20241215',
+    num_seasons=2,
+    player_ids=['2544', '201935', '203507']  # LeBron, Durant, Giannis
+)
 ```
 

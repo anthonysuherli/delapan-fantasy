@@ -1,0 +1,81 @@
+name: "Full Feature Set"
+description: "Complete feature set with all transformers: contextual, efficiency, playmaking, impact, opponent stats, rolling, EWMA"
+version: "1.0.0"
+
+rolling_windows: [3, 5, 10]
+ewma_span: 5
+
+metadata_cols:
+  - playerID
+  - longName
+  - team
+  - teamAbv
+  - pos
+  - gameDate
+  - gameID
+  - fantasyPoints
+  - target
+
+stats:
+  - pts
+  - reb
+  - ast
+  - stl
+  - blk
+  - mins
+  - PF
+  - fga
+  - fgm
+  - fgp
+  - fta
+  - ftm
+  - ftp
+  - tptfga
+  - tptfgm
+  - tptfgp
+  - OffReb
+  - DefReb
+  - TOV
+  - usage
+  - plusMinus
+
+transformers:
+  # Contextual features (home/away, rest)
+  - type: contextual
+    params:
+      max_rest_days: 7
+
+  # Efficiency metrics (eFG%, TS%, FTR, TotalReb)
+  - type: efficiency_metrics
+    params: {}
+
+  # Playmaking metrics (AST/TO ratio)
+  - type: playmaking_metrics
+    params: {}
+
+  # Impact metrics (GameScore)
+  - type: impact_metrics
+    params: {}
+
+  # Opponent statistics (defensive ratings, matchups)
+  - type: opponent_stats
+    params:
+      lookback_days: 365
+      recent_games_window: 10
+
+  # Rolling statistics (mean and std for all stats)
+  - type: rolling_stats
+    params:
+      windows: [3, 5, 10]
+      include_std: true
+
+  # EWMA (exponentially weighted moving averages)
+  - type: ewma
+    params:
+      span: 5
+
+  # Target (must be last)
+  - type: target
+    params:
+      target_col: fantasyPoints
+      shift_periods: -1
